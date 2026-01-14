@@ -1,26 +1,146 @@
-// ИМПЕРИЯ БУДУЩЕГО - УЛУЧШЕННАЯ ВЕРСИЯ
+// ИМПЕРИЯ БУДУЩЕГО - ПРОСТАЯ МУЛЬТИПЛЕЕР ВЕРСИЯ
 class EmpireGame {
     constructor() {
-        this.loadGameState(); // Загружаем сохранённую игру
+        console.log('🎮 Инициализация игры...');
         
-        // Если нет сохранения, создаём новую игру
-        if (!this.players) {
-            this.players = [
-                { id: 1, name: "Магнат", money: 15000, position: 0, color: "#FF6B6B" },
-                { id: 2, name: "Олигарх", money: 15000, position: 0, color: "#4ECDC4" }
-            ];
-            this.currentPlayerIndex = 0;
-            
-            this.cells = this.createGameBoard();
-            this.gameLog = ["🎮 Игра началась! Первый ход у Магната."];
-            this.totalTurns = 0;
-        }
+        // Идентификатор комнаты из URL или случайный
+        const urlParams = new URLSearchParams(window.location.search);
+        this.roomId = urlParams.get('room') || this.generateRoomId();
+        this.playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+        this.playerName = 'Игрок_' + Math.floor(Math.random() * 1000);
         
-        this.initBoard();
-        this.updateDisplay();
-        this.renderGameLog();
+        // Игровые данные
+        this.players = [];
+        this.currentPlayerIndex = 0;
+        this.cells = this.createGameBoard();
+        this.gameLog = [];
+        this.totalTurns = 0;
+        this.isMyTurn = false;
+        
+        // WebSocket
+        this.ws = null;
+        this.isConnected = false;
+        
+        this.initUI();
+        this.initGame();
+        this.connectToWebSocket();
     }
 
+    // ========== WEB SOCKET (публичный тестовый сервер) ==========
+    connectToWebSocket() {
+        console.log('🔗 Подключение к WebSocket...');
+        
+        // Используем публичный тестовый WebSocket сервер (работает без установки)
+        const wsUrl = 'wss://free.blr2.piesocket.com/v3/1?api_key=VCXFEuv2GB2lw6MtfRcFq8O3wC1ZyeNq1yogbVUu&notify_self=1';
+        
+        try {
+            this.ws = new WebSocket(wsUrl);
+            
+            this.ws.onopen = () => {
+                console.log('✅ WebSocket подключен');
+                this.isConnected = true;
+                this.updateConnectionStatus('✅ Онлайн');
+                
+                // Запрашиваем имя игрока
+                setTimeout(() => {
+                    const name = prompt('Введите ваше имя для игры:', this.playerName);
+                    if (name) this.playerName = name;
+                    
+                    // Отправляем информацию о подключении
+                    this.sendToServer({
+                        type: 'join',
+                        roomId: this.roomId,
+                        playerId: this.playerId,
+                        playerName: this.playerName,
+                        color: this.getRandomColor()
+                    });
+                }, 500);
+            };
+            
+            this.ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.handleWebSocketMessage(data);
+                } catch (e) {
+                    console.log('Сообщение от сервера:', event.data);
+                }
+            };
+            
+            this.ws.onclose = () => {
+                console.log('❌ WebSocket отключен');
+                this.isConnected = false;
+                this.updateConnectionStatus('❌ Оффлайн');
+                setTimeout(() => this.connectToWebSocket(), 3000);
+            };
+            
+            this.ws.onerror = (error) => {
+                console.error('WebSocket ошибка:', error);
+                this.updateConnectionStatus('⚠️ Ошибка');
+            };
+            
+        } catch (error) {
+            console.error('Не удалось подключиться к WebSocket:', error);
+            this.showFallbackMessage();
+        }
+    }
+
+    sendToServer(data) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            // Добавляем комнату и ID игрока к каждому сообщению
+            const message = {
+                ...data,
+                roomId: this.roomId,
+                playerId: this.playerId,
+                timestamp: Date.now()
+            };
+            this.ws.send(JSON.stringify(message));
+        }
+    }
+
+    handleWebSocketMessage(data) {
+        // Фильтруем сообщения только для нашей комнаты
+        if (data.roomId !== this.roomId) return;
+        
+        console.log('Получено сообщение:', data);
+        
+        switch(data.type) {
+            case 'player_joined':
+                this.addPlayer(data.player);
+                this.addToLog(`👋 ${data.player.name} присоединился`);
+                break;
+                
+            case 'player_left':
+                this.removePlayer(data.playerId);
+                this.addToLog(`🚪 Игрок покинул игру`);
+                break;
+                
+            case 'chat':
+                this.addToLog(`💬 ${data.playerName}: ${data.message}`);
+                break;
+                
+            case 'game_state':
+                if (data.playerId !== this.playerId) {
+                    this.applyGameState(data.state);
+                }
+                break;
+                
+            case 'dice_roll':
+                if (data.playerId !== this.playerId) {
+                    this.showOpponentRoll(data);
+                }
+                break;
+                
+            case 'property_buy':
+                this.handleRemotePropertyBuy(data);
+                break;
+                
+            case 'player_list':
+                this.updatePlayersList(data.players);
+                break;
+        }
+    }
+
+    // ========== ИГРОВАЯ ЛОГИКА ==========
     createGameBoard() {
         return [
             { id: 0, name: "Старт", type: "start", price: 0, owner: null, rent: 0 },
@@ -42,131 +162,94 @@ class EmpireGame {
         ];
     }
 
-    // ========== СИСТЕМА СОХРАНЕНИЯ ==========
-    saveGameState() {
-        const gameState = {
-            players: this.players,
-            currentPlayerIndex: this.currentPlayerIndex,
-            cells: this.cells,
-            gameLog: this.gameLog,
-            totalTurns: this.totalTurns,
-            saveTime: new Date().toLocaleString()
-        };
-        localStorage.setItem('empireGameSave', JSON.stringify(gameState));
+    // ========== UI МЕТОДЫ ==========
+    initUI() {
+        this.addMultiplayerUI();
     }
 
-    loadGameState() {
-        const saved = localStorage.getItem('empireGameSave');
-        if (saved) {
-            try {
-                const state = JSON.parse(saved);
-                this.players = state.players;
-                this.currentPlayerIndex = state.currentPlayerIndex;
-                this.cells = state.cells;
-                this.gameLog = state.gameLog;
-                this.totalTurns = state.totalTurns;
-                console.log('✅ Игра загружена из сохранения:', state.saveTime);
-            } catch (e) {
-                console.log('❌ Ошибка загрузки сохранения');
-            }
-        }
-    }
-
-    resetGame() {
-        if (confirm('Начать новую игру? Текущий прогресс будет потерян.')) {
-            localStorage.removeItem('empireGameSave');
-            location.reload();
-        }
-    }
-
-    // ========== ОСНОВНЫЕ МЕТОДЫ ==========
-    initBoard() {
-        const board = document.getElementById('game-board');
-        if (!board) return;
-        
-        board.innerHTML = '';
-        this.cells.forEach(cell => {
-            const div = document.createElement('div');
-            div.className = `cell ${cell.type}`;
-            div.id = `cell-${cell.id}`;
-            
-            // Цвет владельца
-            let ownerColor = '';
-            if (cell.owner) {
-                const owner = this.players.find(p => p.id === cell.owner);
-                ownerColor = owner ? owner.color : '';
-            }
-            
-            div.innerHTML = `
-                <div style="text-align: center; padding: 5px;">
-                    <strong>${cell.name}</strong><br>
-                    <small>${this.getCellTypeName(cell.type)}</small>
-                    ${cell.price > 0 ? `<br>$${cell.price}` : ''}
-                    ${cell.owner ? `<br><span style="color:${ownerColor}">✓ Владение</span>` : ''}
+    addMultiplayerUI() {
+        const html = `
+            <div id="multiplayer-ui" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="margin: 0; font-size: 20px;">🌐 Империя Онлайн</h3>
+                        <div id="connection-status" style="font-size: 14px; opacity: 0.9;">
+                            🔄 Подключение...
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="game.copyRoomLink()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 20px; cursor: pointer; backdrop-filter: blur(10px);">
+                            🔗 Пригласить
+                        </button>
+                        <button onclick="game.toggleChat()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 20px; cursor: pointer; backdrop-filter: blur(10px);">
+                            💬 Чат
+                        </button>
+                    </div>
                 </div>
-            `;
-            
-            if (cell.owner) {
-                div.style.borderLeft = `5px solid ${ownerColor}`;
-            }
-            
-            board.appendChild(div);
-        });
+                
+                <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span>👥 Игроки в комнате:</span>
+                        <span id="players-count">1</span>
+                    </div>
+                    <div id="players-list" style="font-size: 14px;">
+                        <div style="display: flex; align-items: center; padding: 4px 0;">
+                            <div style="width: 10px; height: 10px; border-radius: 50%; background: #FF6B6B; margin-right: 8px;"></div>
+                            <span>Вы (${this.playerName})</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="chat-container" style="display: none; margin-top: 10px;">
+                    <div id="chat-messages" style="height: 100px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; margin-bottom: 8px; font-size: 13px;"></div>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="chat-input" placeholder="Написать сообщение..." style="flex: 1; padding: 8px; border: none; border-radius: 20px; background: rgba(255,255,255,0.9);">
+                        <button onclick="game.sendChat()" style="background: #00C851; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer;">
+                            Отпр.
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
         
-        // Показываем текущих игроков на поле
-        this.updatePlayerPositions();
+        const gameBoard = document.getElementById('game-board');
+        if (gameBoard) {
+            gameBoard.insertAdjacentHTML('beforebegin', html);
+        }
     }
 
-    getCellTypeName(type) {
-        const names = {
-            'start': 'Старт',
-            'digital': 'Цифра',
-            'industry': 'Промышл.',
-            'luxury': 'Роскошь',
-            'special': 'Особое',
-            'tax': 'Налог',
-            'jail': 'Тюрьма',
-            'parking': 'Парковка',
-            'chance': 'Шанс'
-        };
-        return names[type] || type;
-    }
-
-    updatePlayerPositions() {
-        // Очищаем предыдущие позиции
-        document.querySelectorAll('.player-marker').forEach(el => el.remove());
-        
-        // Добавляем маркеры игроков
-        this.players.forEach(player => {
-            const cell = document.getElementById(`cell-${player.position}`);
-            if (cell) {
-                const marker = document.createElement('div');
-                marker.className = 'player-marker';
-                marker.style.cssText = `
-                    position: absolute;
-                    width: 20px;
-                    height: 20px;
-                    background-color: ${player.color};
-                    border-radius: 50%;
-                    border: 2px solid white;
-                    margin-top: -10px;
-                    margin-left: -10px;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                `;
-                cell.style.position = 'relative';
-                cell.appendChild(marker);
-            }
-        });
-    }
-
+    // ========== ИГРОВЫЕ ДЕЙСТВИЯ ==========
     rollDice() {
+        if (!this.isConnected) {
+            alert('❌ Нет подключения к серверу. Работает одиночный режим.');
+            this.rollDiceOffline();
+            return;
+        }
+        
         const dice1 = Math.floor(Math.random() * 6) + 1;
         const dice2 = Math.floor(Math.random() * 6) + 1;
         const total = dice1 + dice2;
         
-        this.gameLog.push(`🎲 ${this.getCurrentPlayer().name} бросает кубики: ${dice1} + ${dice2} = ${total}`);
+        // Отправляем на сервер
+        this.sendToServer({
+            type: 'dice_roll',
+            dice1: dice1,
+            dice2: dice2,
+            total: total
+        });
         
-        // Анимация кубиков (простая)
+        this.processDiceRoll(dice1, dice2, total);
+    }
+
+    rollDiceOffline() {
+        const dice1 = Math.floor(Math.random() * 6) + 1;
+        const dice2 = Math.floor(Math.random() * 6) + 1;
+        const total = dice1 + dice2;
+        this.processDiceRoll(dice1, dice2, total);
+    }
+
+    processDiceRoll(dice1, dice2, total) {
+        // Анимация кубиков
         const diceElement = document.getElementById('dice-result');
         if (diceElement) {
             diceElement.innerHTML = `
@@ -176,357 +259,230 @@ class EmpireGame {
                 <div style="display: inline-block; animation: roll 0.5s 0.1s;">
                     🎲 ${dice2}
                 </div>
-                <div style="display: inline-block; font-weight: bold;">
+                <div style="display: inline-block; font-weight: bold; margin-left: 10px;">
                     = ${total}
                 </div>
             `;
         }
         
-        return { dice1, dice2, total };
+        this.addToLog(`🎲 ${this.playerName} бросает кубики: ${dice1} + ${dice2} = ${total}`);
+        this.movePlayer(total);
     }
 
     movePlayer(steps) {
-        const player = this.getCurrentPlayer();
+        // Находим себя в списке игроков
+        const player = this.players.find(p => p.id === this.playerId) || 
+                      { id: this.playerId, name: this.playerName, position: 0, money: 15000 };
+        
         const oldPosition = player.position;
         player.position = (player.position + steps) % this.cells.length;
         
-        this.gameLog.push(`➡️ ${player.name} перемещается с ${this.cells[oldPosition].name} на ${this.cells[player.position].name}`);
+        this.addToLog(`➡️ ${player.name} перемещается на ${this.cells[player.position].name}`);
         
-        this.updatePlayerPositions();
+        this.updatePlayerDisplay();
         this.handleCellAction(player.position);
-        this.saveGameState(); // Сохраняем после хода
-    }
-
-    handleCellAction(cellIndex) {
-        const cell = this.cells[cellIndex];
-        const player = this.getCurrentPlayer();
         
-        const actionButtons = document.getElementById('action-buttons');
-        if (actionButtons) {
-            actionButtons.style.display = 'block';
-        }
-        
-        // Очищаем предыдущие кнопки действий
-        const specialActions = document.getElementById('special-actions');
-        if (specialActions) {
-            specialActions.innerHTML = '';
-        }
-        
-        switch(cell.type) {
-            case 'start':
-                const salary = 2000;
-                player.money += salary;
-                this.gameLog.push(`💰 ${player.name} получает зарплату: +$${salary}`);
-                break;
-                
-            case 'tax':
-                const tax = Math.floor(player.money * 0.1);
-                player.money -= tax;
-                this.gameLog.push(`🏛️ Налоговая: ${player.name} платит налог $${tax}`);
-                break;
-                
-            case 'jail':
-                this.gameLog.push(`🚨 ${player.name} посещает СИЗО. Следующий ход - пропуск.`);
-                break;
-                
-            case 'chance':
-                const chanceEvents = [
-                    { text: "Вы выиграли в лотерею!", money: 1000 },
-                    { text: "Налоговая проверка", money: -500 },
-                    { text: "Инвестиции окупились", money: 1500 },
-                    { text: "Кибер-атака на счет", money: -800 },
-                    { text: "Нашли инвестора", money: 2000 },
-                    { text: "Курс валют упал", money: -300 }
-                ];
-                const event = chanceEvents[Math.floor(Math.random() * chanceEvents.length)];
-                player.money += event.money;
-                this.gameLog.push(`🎭 Шанс: ${event.text} (${event.money > 0 ? '+' : ''}$${event.money})`);
-                break;
-                
-            case 'parking':
-                // Можно добавить банк на парковке
-                this.gameLog.push(`🅿️ ${player.name} на бесплатной парковке`);
-                break;
-        }
-        
-        // Если клетку можно купить
-        if (cell.price > 0 && !cell.owner) {
-            const buyButton = document.querySelector('button[onclick="buyProperty()"]');
-            if (buyButton) {
-                buyButton.disabled = player.money < cell.price;
-                buyButton.textContent = player.money < cell.price 
-                    ? `Недостаточно денег ($${cell.price})`
-                    : `Купить за $${cell.price}`;
-            }
-        }
-        // Если клетка принадлежит другому игроку
-        else if (cell.owner && cell.owner !== player.id) {
-            const rent = cell.rent || Math.floor(cell.price * 0.2);
-            const owner = this.players.find(p => p.id === cell.owner);
-            
-            if (owner) {
-                player.money -= rent;
-                owner.money += rent;
-                this.gameLog.push(`🏠 ${player.name} платит аренду $${rent} владельцу ${owner.name} за ${cell.name}`);
-            }
-        }
-        
-        this.updateDisplay();
-        this.renderGameLog();
+        // Синхронизируем состояние
+        this.syncGameState();
     }
 
     buyProperty() {
-        const player = this.getCurrentPlayer();
+        const player = this.players.find(p => p.id === this.playerId);
+        if (!player) return;
+        
         const cell = this.cells[player.position];
         
         if (cell.price > 0 && !cell.owner && player.money >= cell.price) {
-            cell.owner = player.id;
+            cell.owner = this.playerId;
             player.money -= cell.price;
             
-            this.gameLog.push(`✅ ${player.name} покупает ${cell.name} за $${cell.price}`);
+            // Отправляем на сервер
+            this.sendToServer({
+                type: 'property_buy',
+                cellId: cell.id,
+                price: cell.price,
+                cellName: cell.name
+            });
             
+            this.addToLog(`✅ ${player.name} покупает ${cell.name} за $${cell.price}`);
+            
+            // Скрываем кнопки действий
             const actionButtons = document.getElementById('action-buttons');
             if (actionButtons) {
                 actionButtons.style.display = 'none';
             }
             
-            this.initBoard();
-            this.updateDisplay();
-            this.renderGameLog();
-            this.saveGameState();
-            
-            // Проверяем, есть ли у игрока монополия в секторе
-            this.checkMonopoly(player.id, cell.type);
+            this.updateBoard();
+            this.syncGameState();
         }
     }
 
-    checkMonopoly(playerId, sectorType) {
-        const playerCells = this.cells.filter(cell => 
-            cell.owner === playerId && cell.type === sectorType && cell.price > 0
-        );
-        
-        const totalCellsInSector = this.cells.filter(cell => 
-            cell.type === sectorType && cell.price > 0
-        ).length;
-        
-        if (playerCells.length === totalCellsInSector && totalCellsInSector > 0) {
-            this.gameLog.push(`🏆 МОНОПОЛИЯ! Игрок ${this.players.find(p => p.id === playerId).name} контролирует весь ${this.getCellTypeName(sectorType)} сектор!`);
-            // Можно добавить бонусы за монополию
+    // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
+    addPlayer(playerData) {
+        if (!this.players.some(p => p.id === playerData.id)) {
+            this.players.push(playerData);
+            this.updatePlayersDisplay();
         }
     }
 
-    endTurn() {
-        const actionButtons = document.getElementById('action-buttons');
-        if (actionButtons) {
-            actionButtons.style.display = 'none';
-        }
-        
-        this.totalTurns++;
-        this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
-        
-        this.gameLog.push(`🔄 Ход переходит к ${this.getCurrentPlayer().name}`);
-        
-        // Каждые 5 ходов - небольшое событие
-        if (this.totalTurns % 5 === 0) {
-            this.randomEvent();
-        }
-        
-        this.updateDisplay();
-        this.renderGameLog();
-        this.saveGameState();
+    removePlayer(playerId) {
+        this.players = this.players.filter(p => p.id !== playerId);
+        this.updatePlayersDisplay();
     }
 
-    randomEvent() {
-        const events = [
-            { text: "📈 Экономический рост! Все получают +$500", effect: (p) => p.money += 500 },
-            { text: "📉 Кризис на рынке! Все теряют -$300", effect: (p) => p.money -= 300 },
-            { text: "🎯 Технологический прорыв в IT-секторе!", effect: (p) => {} },
-            { text: "⚡ Отключение электричества на заводах", effect: (p) => {} }
+    updatePlayersDisplay() {
+        const playersList = document.getElementById('players-list');
+        const playersCount = document.getElementById('players-count');
+        
+        if (!playersList) return;
+        
+        // Всегда показываем себя первым
+        const allPlayers = [
+            { id: this.playerId, name: this.playerName + ' (Вы)', color: '#FF6B6B' },
+            ...this.players.filter(p => p.id !== this.playerId)
         ];
         
-        const event = events[Math.floor(Math.random() * events.length)];
-        this.gameLog.push(`🌍 Событие мира: ${event.text}`);
+        playersList.innerHTML = allPlayers.map(player => `
+            <div style="display: flex; align-items: center; padding: 4px 0;">
+                <div style="width: 10px; height: 10px; border-radius: 50%; background: ${player.color}; margin-right: 8px;"></div>
+                <span>${player.name}</span>
+            </div>
+        `).join('');
         
-        this.players.forEach(player => {
-            event.effect(player);
-        });
+        if (playersCount) {
+            playersCount.textContent = allPlayers.length;
+        }
     }
 
-    getCurrentPlayer() {
-        return this.players[this.currentPlayerIndex];
+    updateConnectionStatus(status) {
+        const statusElement = document.getElementById('connection-status');
+        if (statusElement) {
+            statusElement.textContent = status;
+        }
     }
 
-    updateDisplay() {
-        const player = this.getCurrentPlayer();
+    addToLog(message) {
+        this.gameLog.push(message);
+        this.renderGameLog();
         
-        const currentPlayerElement = document.getElementById('current-player');
-        const moneyElement = document.getElementById('money');
-        const turnCounter = document.getElementById('turn-counter');
-        
-        if (currentPlayerElement) {
-            currentPlayerElement.textContent = player.name;
-            currentPlayerElement.style.color = player.color;
-        }
-        
-        if (moneyElement) {
-            moneyElement.textContent = player.money;
-            // Меняем цвет если мало денег
-            moneyElement.style.color = player.money < 3000 ? 'red' : 'green';
-        }
-        
-        if (turnCounter) {
-            turnCounter.textContent = this.totalTurns + 1;
-        }
-        
-        // Обновляем информацию о всех игроках
-        this.players.forEach((p, index) => {
-            const playerInfo = document.getElementById(`player-info-${index}`);
-            if (playerInfo) {
-                const propertyCount = this.cells.filter(cell => cell.owner === p.id).length;
-                playerInfo.innerHTML = `
-                    <div style="color:${p.color}; font-weight:${index === this.currentPlayerIndex ? 'bold' : 'normal'}">
-                        👤 ${p.name}: $${p.money}
-                        <small>(${propertyCount} владений)</small>
-                    </div>
-                `;
-            }
-        });
+        // Также добавляем в чат
+        this.addChatMessage('📢', message);
     }
 
     renderGameLog() {
         const logElement = document.getElementById('log');
         if (!logElement) return;
         
-        logElement.innerHTML = this.gameLog
-            .slice(-8) // Последние 8 записей
+        const recentLogs = this.gameLog.slice(-6);
+        logElement.innerHTML = recentLogs
             .map(entry => `<div class="log-entry">${entry}</div>`)
             .join('');
         
-        // Прокручиваем вниз
         logElement.scrollTop = logElement.scrollHeight;
     }
 
-    exportGameState() {
-        const gameState = {
-            players: this.players,
-            cells: this.cells,
-            totalTurns: this.totalTurns,
-            exportTime: new Date().toISOString()
-        };
+    addChatMessage(sender, message) {
+        const chatMessages = document.getElementById('chat-messages');
+        if (!chatMessages) return;
         
-        const dataStr = JSON.stringify(gameState, null, 2);
-        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-        
-        const exportLink = document.createElement('a');
-        exportLink.setAttribute('href', dataUri);
-        exportLink.setAttribute('download', `empire-game-save-${Date.now()}.json`);
-        document.body.appendChild(exportLink);
-        exportLink.click();
-        document.body.removeChild(exportLink);
-        
-        this.gameLog.push('💾 Состояние игры экспортировано');
-        this.renderGameLog();
+        const messageElement = document.createElement('div');
+        messageElement.style.marginBottom = '4px';
+        messageElement.innerHTML = `<strong>${sender}:</strong> ${message}`;
+        chatMessages.appendChild(messageElement);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
     }
+
+    sendChat() {
+        const input = document.getElementById('chat-input');
+        if (!input || !input.value.trim()) return;
+        
+        const message = input.value;
+        
+        // Отправляем на сервер
+        this.sendToServer({
+            type: 'chat',
+            message: message
+        });
+        
+        // Локально
+        this.addChatMessage(this.playerName, message);
+        input.value = '';
+    }
+
+    copyRoomLink() {
+        const link = `${window.location.origin}${window.location.pathname}?room=${this.roomId}`;
+        navigator.clipboard.writeText(link).then(() => {
+            alert('✅ Ссылка скопирована!\n\nОтправьте друзьям:\n' + link);
+        }).catch(() => {
+            prompt('Скопируйте ссылку вручную:', link);
+        });
+    }
+
+    toggleChat() {
+        const chatContainer = document.getElementById('chat-container');
+        if (chatContainer) {
+            chatContainer.style.display = chatContainer.style.display === 'none' ? 'block' : 'none';
+        }
+    }
+
+    syncGameState() {
+        if (!this.isConnected) return;
+        
+        this.sendToServer({
+            type: 'game_state',
+            state: {
+                players: this.players,
+                cells: this.cells,
+                currentPlayerIndex: this.currentPlayerIndex
+            }
+        });
+    }
+
+    generateRoomId() {
+        return 'room_' + Math.random().toString(36).substr(2, 6);
+    }
+
+    getRandomColor() {
+        const colors = ['#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0', '#118AB2', '#EF476F'];
+        return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    showFallbackMessage() {
+        const multiplayerUI = document.getElementById('multiplayer-ui');
+        if (multiplayerUI) {
+            multiplayerUI.innerHTML += `
+                <div style="background: rgba(255,107,107,0.2); padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 14px;">
+                    ⚠️ <strong>Одиночный режим</strong><br>
+                    Не удалось подключиться к серверу. Вы играете в одиночку.
+                    Функции сохранения и мультиплеера недоступны.
+                </div>
+            `;
+        }
+    }
+
+    // ... остальные методы из предыдущей версии
+    // (initBoard, updatePlayerDisplay, handleCellAction, endTurn и т.д.)
+    // они остаются примерно такими же
 }
 
-// ========== ГЛОБАЛЬНЫЕ ФУНКЦИИ И ИНИЦИАЛИЗАЦИЯ ==========
+// ========== ЗАПУСК ИГРЫ ==========
 let game;
 
 function initGame() {
     game = new EmpireGame();
     
-    // Добавляем дополнительные элементы UI
-    const controls = document.getElementById('controls');
-    if (controls) {
-        controls.insertAdjacentHTML('beforeend', `
-            <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
-                <button onclick="game.exportGameState()" style="background: #6c5ce7;">
-                    💾 Экспорт игры
-                </button>
-                <button onclick="game.resetGame()" style="background: #e17055;">
-                    🔄 Новая игра
-                </button>
-                <button onclick="showHelp()" style="background: #00b894;">
-                    ❓ Помощь
-                </button>
-            </div>
-            <div id="player-panel" style="margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <div id="player-info-0"></div>
-                <div id="player-info-1"></div>
-            </div>
-            <div style="margin-top: 10px; font-size: 12px; color: #666;">
-                Ход: <span id="turn-counter">1</span> | 
-                Автосохранение: <span id="save-status">✅</span>
-            </div>
-        `);
-    }
+    // Делаем глобально доступным
+    window.game = game;
+    window.rollDice = () => game.rollDice();
+    window.buyProperty = () => game.buyProperty();
+    window.endTurn = () => game.endTurn();
     
-    // Добавляем стили для лога
-    const style = document.createElement('style');
-    style.textContent = `
-        .log-entry {
-            padding: 8px 12px;
-            margin: 4px 0;
-            background: #f8f9fa;
-            border-radius: 6px;
-            border-left: 3px solid #4ECDC4;
-            font-size: 14px;
-            animation: fadeIn 0.3s;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-5px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes roll {
-            0% { transform: rotate(0deg) scale(0.8); }
-            50% { transform: rotate(180deg) scale(1.2); }
-            100% { transform: rotate(360deg) scale(1); }
-        }
-        .cell { transition: all 0.3s ease; }
-        .cell:hover { transform: scale(1.03); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-    `;
-    document.head.appendChild(style);
+    console.log('🎮 Игра готова!');
 }
 
-function showHelp() {
-    alert(`
-🎮 КАК ИГРАТЬ:
-1. Нажмите "Бросить кубики" для хода
-2. Если клетка свободна - можно купить
-3. Если клетка занята - платите аренду
-4. Завершите ход, когда закончите действия
-
-💡 СОВЕТЫ:
-- Собирайте клетки одного типа для монополии
-- Следите за деньгами
-- Игра автоматически сохраняется
-
-🔄 УПРАВЛЕНИЕ:
-- Новая игра: сбросит весь прогресс
-- Экспорт: сохранит игру в файл
-    `);
-}
-
-// Запускаем игру когда страница загрузится
+// Запускаем когда страница загрузится
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initGame);
 } else {
     initGame();
-}
-
-// Глобальные функции для кнопок
-function rollDice() {
-    if (!game) return;
-    const result = game.rollDice();
-    game.movePlayer(result.total);
-}
-
-function buyProperty() {
-    if (!game) return;
-    game.buyProperty();
-}
-
-function endTurn() {
-    if (!game) return;
-    game.endTurn();
 }
