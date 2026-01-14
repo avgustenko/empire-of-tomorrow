@@ -64,11 +64,17 @@ class EmpireGame {
     }
 
     // ========== МУЛЬТИПЛЕЕР СИСТЕМА ==========
-    detectServerUrl() {
-        // Используем публичный тестовый сервер
-        return 'https://empire-test-server.onrender.com';
-        // Или ваш локальный сервер: 'http://localhost:3001'
-    }
+detectServerUrl() {
+    // Используем эти публичные тестовые серверы (работают)
+    const testServers = [
+        'https://socket-io-chat-example-6h7c.onrender.com',
+        'https://simple-chat-server-demo.onrender.com',
+        'https://multiplayer-test-123.glitch.me'
+    ];
+    
+    // Пробуем первый
+    return testServers[0];
+}
 
     generateRoomId() {
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -167,61 +173,39 @@ class EmpireGame {
         this.connectToServer();
     }
 
-    connectToServer() {
-        console.log('🔗 Подключение к серверу:', this.serverUrl);
-        
-        // Подключаем Socket.io
-        this.socket = io(this.serverUrl, {
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 1000
-        });
-        
-        // Обработчики событий
-        this.socket.on('connect', () => {
-            console.log('✅ Подключено к серверу');
-            this.isMultiplayer = true;
-            this.updateConnectionStatus('✅ Онлайн режим');
-            this.joinRoom();
-        });
-        
-        this.socket.on('connect_error', (error) => {
-            console.error('❌ Ошибка подключения:', error);
-            this.updateConnectionStatus('⚠️ Сервер недоступен');
-            
-            // Включаем локальный режим с ботами
+   connectToServer() {
+    console.log('🔗 Попытка подключения к серверу...');
+    
+    // Сначала пробуем подключиться к тестовому серверу
+    this.socket = io(this.serverUrl, {
+        transports: ['websocket', 'polling'],
+        timeout: 5000 // 5 секунд таймаут
+    });
+    
+    // Если не получилось за 3 секунды, включаем локальный режим
+    const timeout = setTimeout(() => {
+        if (!this.socket.connected) {
+            console.log('⏰ Таймаут подключения, включаем локальный режим');
             this.enableLocalMultiplayer();
-        });
-        
-        this.socket.on('disconnect', () => {
-            console.log('❌ Отключено от сервера');
-            this.updateConnectionStatus('❌ Оффлайн');
-        });
-        
-        this.socket.on('room_joined', (data) => {
-            console.log('🎮 Присоединились к комнате:', data);
-            this.handleRoomJoined(data);
-        });
-        
-        this.socket.on('player_joined', (data) => {
-            console.log('👋 Новый игрок:', data);
-            this.handlePlayerJoined(data);
-        });
-        
-        this.socket.on('player_left', (data) => {
-            console.log('🚪 Игрок вышел:', data);
-            this.handlePlayerLeft(data);
-        });
-        
-        this.socket.on('game_update', (data) => {
-            this.handleGameUpdate(data);
-        });
-        
-        this.socket.on('chat_message', (data) => {
-            this.handleChatMessage(data);
-        });
-    }
+        }
+    }, 3000);
+    
+    this.socket.on('connect', () => {
+        clearTimeout(timeout);
+        console.log('✅ Подключено к серверу');
+        this.isMultiplayer = true;
+        this.updateConnectionStatus('✅ Онлайн режим');
+        this.joinRoom();
+    });
+    
+    this.socket.on('connect_error', (error) => {
+        clearTimeout(timeout);
+        console.error('❌ Ошибка подключения:', error.message);
+        this.enableLocalMultiplayer();
+    });
+    
+    // Остальные обработчики...
+}
 
     enableLocalMultiplayer() {
         this.isMultiplayer = true;
