@@ -1,34 +1,87 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Империя Будущего - Прототип</title>
-    <style>
-        body { font-family: Arial; margin: 40px; }
-        #game-board { display: grid; grid-template-columns: repeat(4, 100px); gap: 5px; }
-        .cell { border: 2px solid #333; height: 100px; display: flex; align-items: center; 
-                justify-content: center; cursor: pointer; font-size: 12px; }
-        .owned { background-color: #e0ffe0; }
-        #controls { margin: 20px 0; }
-        button { padding: 10px 20px; font-size: 16px; }
-    </style>
-</head>
 <body>
-    <h1>Империя Будущего - Технодемка</h1>
-    
-    <div id="game-board"></div>
-    
-    <div id="controls">
-        <p>Игрок <span id="current-player">1</span> | Деньги: $<span id="money">15000</span></p>
-        <button onclick="rollDice()">Бросить кубики</button>
-        <div id="dice-result"></div>
-        <div id="action-buttons" style="display:none;">
-            <button onclick="buyProperty()">Купить участок</button>
-            <button onclick="endTurn()">Завершить ход</button>
+    <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+        <header style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #2d3436; margin-bottom: 5px;">🏢 Империя Будущего</h1>
+            <p style="color: #636e72; margin-top: 0;">Онлайн-стратегия с динамичной экономикой</p>
+        </header>
+        
+        <div style="display: grid; grid-template-columns: 3fr 1fr; gap: 20px;">
+            <!-- Игровое поле -->
+            <div>
+                <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+                    <h3 style="margin-top: 0;">Игровое поле</h3>
+                    <div id="game-board" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;"></div>
+                </div>
+                
+                <!-- Панель управления -->
+                <div id="controls" style="margin-top: 20px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+                    <h3 style="margin-top: 0;">Управление</h3>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <p style="margin: 0 0 10px 0;">
+                            Ход: <strong><span id="current-player">Игрок 1</span></strong> 
+                            | Деньги: $<strong><span id="money">15000</span></strong>
+                        </p>
+                        <button onclick="rollDice()" style="background: #0984e3; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%;">
+                            🎲 Бросить кубики
+                        </button>
+                        <div id="dice-result" style="text-align: center; margin: 10px 0; font-size: 18px; min-height: 30px;"></div>
+                    </div>
+                    
+                    <div id="action-buttons" style="display: none; background: #fff3cd; padding: 15px; border-radius: 8px; border: 1px solid #ffeaa7;">
+                        <p style="margin-top: 0; color: #856404;">Доступные действия:</p>
+                        <div style="display: flex; gap: 10px;">
+                            <button onclick="buyProperty()" style="flex: 1; background: #00b894; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer;">
+                                Купить участок
+                            </button>
+                            <button onclick="endTurn()" style="flex: 1; background: #6c5ce7; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer;">
+                                Завершить ход
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="special-actions"></div>
+                </div>
+            </div>
+            
+            <!-- Панель информации -->
+            <div>
+                <!-- Лог игры -->
+                <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); margin-bottom: 20px;">
+                    <h3 style="margin-top: 0;">📜 Журнал событий</h3>
+                    <div id="log" style="height: 400px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 8px; font-size: 14px;"></div>
+                </div>
+                
+                <!-- Краткие правила -->
+                <div style="background: #dfe6e9; border-radius: 12px; padding: 15px; font-size: 14px;">
+                    <h4 style="margin-top: 0;">🎯 Цель игры</h4>
+                    <p>Соберите самую мощную бизнес-империю! Покупайте активы, собирайте монополии и разоряйте соперников.</p>
+                    
+                    <h4>⚡ Быстрые правила</h4>
+                    <ul style="padding-left: 20px;">
+                        <li>Бросайте кубики для движения</li>
+                        <li>Покупайте свободные клетки</li>
+                        <li>Платите аренду за чужие владения</li>
+                        <li>Собирайте сектора для монополии</li>
+                    </ul>
+                    
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #b2bec3;">
+                        <small>🎮 <strong>Режим:</strong> Прототип v1.1</small><br>
+                        <small>🔄 <strong>Сохранение:</strong> Автоматическое</small><br>
+                        <small>👥 <strong>Игроки:</strong> 2 (очередь)</small>
+                    </div>
+                </div>
+            </div>
         </div>
+        
+        <footer style="text-align: center; margin-top: 40px; color: #636e72; font-size: 14px;">
+            <p>
+                🚀 Разрабатывается в реальном времени | 
+                👨‍💻 Разработчик: <a href="https://github.com/avgustenko" target="_blank">avgustenko</a> | 
+                🤖 AI-архитектор: DeepSeek |
+                📂 <a href="https://github.com/avgustenko/empire-of-tomorrow" target="_blank">GitHub репозиторий</a>
+            </p>
+        </footer>
     </div>
-    
-    <div id="log"></div>
     
     <script src="game.js"></script>
 </body>
-</html>
