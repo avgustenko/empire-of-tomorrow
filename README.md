@@ -30,3 +30,28 @@ A complex economic strategy game combining board game mechanics with dynamic mar
 4. Buy properties and build your empire!
 
 ## 📁 Project Structure
+
+empire-of-tomorrow/
+├── index.html # Main game interface
+├── game.js # Core game logic
+├── README.md # This documentation
+└── .gitignore # Git ignore rules
+
+
+## 👥 Development Team
+- **Lead Developer**: [avgustenko](https://github.com/avgustenko)
+- **AI Architect & Game Designer**: [DeepSeek AI](https://deepseek.com)
+- **Special Thanks**: ChatGPT for initial brainstorming
+
+## 🔄 Development Roadmap
+- [x] Phase 1: Basic prototype (current)
+- [ ] Phase 2: WebSocket multiplayer
+- [ ] Phase 3: Economic system (inflation, stock market)
+- [ ] Phase 4: Advanced features (casino, auctions)
+- [ ] Phase 5: Polish & release
+
+## 🤝 Contributing
+This is a learning project. Feel free to fork and experiment!
+
+## 📄 License
+Educational project - for learning purposes only.
