@@ -57,7 +57,7 @@ class EmpireGame {
     detectServerUrl() {
         // Если игра открыта с GitHub Pages
         if (window.location.hostname.includes('github.io')) {
-            return 'https://empire-of-tomorrow-server.onrender.com'; // Ваш сервер
+            return 'https://empire-of-tomorrow-server.onrender.com/'; // Ваш сервер
         }
         // Если локально
         return 'http://localhost:3001';
@@ -1191,4 +1191,5 @@ style.textContent = `
         to { transform: translateX(100%); opacity: 0; }
     }
 `;
+
 document.head.appendChild(style);
