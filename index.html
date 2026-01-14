@@ -1,87 +1,918 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏢 Империя Будущего - Онлайн стратегия</title>
+    <style>
+        /* ========== ОСНОВНЫЕ СТИЛИ ========== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* ========== ШАПКА ========== */
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4);
+        }
+
+        h1 {
+            color: #2d3436;
+            font-size: 2.8rem;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #FF6B6B, #4ECDC4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: #636e72;
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+        }
+
+        .status-badges {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+
+        .badge {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .badge.online {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #a5d6a7;
+        }
+
+        .badge.multiplayer {
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #90caf9;
+        }
+
+        .badge.beta {
+            background: #fff3e0;
+            color: #ef6c00;
+            border: 1px solid #ffcc80;
+        }
+
+        /* ========== ОСНОВНОЙ КОНТЕНТ ========== */
+        .main-content {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* ========== ИГРОВОЕ ПОЛЕ ========== */
+        .game-board-container {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            color: #2d3436;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: linear-gradient(180deg, #FF6B6B, #4ECDC4);
+            border-radius: 2px;
+        }
+
+        #game-board {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 25px;
+        }
+
+        .cell {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 10px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cell:hover {
+            transform: translateY(-4px);
+            border-color: #4ECDC4;
+            box-shadow: 0 10px 20px rgba(78, 205, 196, 0.2);
+        }
+
+        .cell::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: transparent;
+            transition: background 0.3s;
+        }
+
+        .cell.start::before { background: #00C851; }
+        .cell.digital::before { background: #33b5e5; }
+        .cell.industry::before { background: #ff4444; }
+        .cell.luxury::before { background: #ffbb33; }
+        .cell.special::before { background: #aa66cc; }
+        .cell.tax::before { background: #2BBBAD; }
+        .cell.jail::before { background: #37474F; }
+        .cell.parking::before { background: #4285F4; }
+        .cell.chance::before { background: #FF6B6B; }
+
+        .cell-content {
+            z-index: 1;
+            width: 100%;
+        }
+
+        .cell-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+            color: #2d3436;
+        }
+
+        .cell-type {
+            font-size: 0.75rem;
+            color: #666;
+            background: #f8f9fa;
+            padding: 2px 8px;
+            border-radius: 10px;
+            display: inline-block;
+            margin-bottom: 6px;
+        }
+
+        .cell-price {
+            font-size: 0.9rem;
+            color: #00C851;
+            font-weight: bold;
+        }
+
+        /* ========== ПАНЕЛЬ УПРАВЛЕНИЯ ========== */
+        .controls-panel {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+        }
+
+        .player-info {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .player-info::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200px;
+            height: 200px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 50%;
+        }
+
+        .current-player {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .player-money {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .dice-controls {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .roll-button {
+            background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%);
+            color: white;
+            border: none;
+            padding: 18px 40px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.3);
+        }
+
+        .roll-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 107, 107, 0.4);
+        }
+
+        .roll-button:active {
+            transform: translateY(0);
+        }
+
+        .roll-button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        #dice-result {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #2d3436;
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .action-buttons {
+            background: #fff3cd;
+            border: 2px solid #ffeaa7;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .action-buttons.show {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .action-title {
+            color: #856404;
+            font-weight: 600;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .action-buttons-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .action-button {
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .action-button.buy {
+            background: #00b894;
+            color: white;
+        }
+
+        .action-button.end {
+            background: #6c5ce7;
+            color: white;
+        }
+
+        .action-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .action-button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* ========== ИНФОРМАЦИОННАЯ ПАНЕЛЬ ========== */
+        .info-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+
+        .game-log {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+            flex: 1;
+        }
+
+        .log-container {
+            height: 400px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .log-entry {
+            padding: 12px 15px;
+            margin: 8px 0;
+            background: white;
+            border-radius: 8px;
+            border-left: 4px solid #4ECDC4;
+            font-size: 0.95rem;
+            animation: fadeIn 0.3s ease-out;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .rules-panel {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+        }
+
+        .rules-list {
+            list-style: none;
+            margin-top: 15px;
+        }
+
+        .rules-list li {
+            padding: 10px 0 10px 30px;
+            position: relative;
+            border-bottom: 1px solid #eee;
+        }
+
+        .rules-list li::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: #00C851;
+            font-weight: bold;
+        }
+
+        /* ========== ФУТЕР ========== */
+        footer {
+            text-align: center;
+            padding: 25px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+            color: #636e72;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 25px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .footer-link {
+            color: #667eea;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: color 0.3s;
+        }
+
+        .footer-link:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        /* ========== АНИМАЦИИ ========== */
+        @keyframes roll {
+            0% { transform: rotate(0deg) scale(0.8); }
+            50% { transform: rotate(180deg) scale(1.2); }
+            100% { transform: rotate(360deg) scale(1); }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        /* ========== ПРОГРЕСС БАР ========== */
+        .progress-container {
+            margin-top: 15px;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #FF6B6B, #4ECDC4);
+            width: 0%;
+            transition: width 0.5s ease;
+            position: relative;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, 
+                transparent, 
+                rgba(255,255,255,0.4), 
+                transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        /* ========== ТУЛТИПЫ ========== */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+        }
+
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            width: 200px;
+            background: #2d3436;
+            color: white;
+            text-align: center;
+            padding: 10px;
+            border-radius: 6px;
+            position: absolute;
+            z-index: 100;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .tooltip .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #2d3436 transparent transparent transparent;
+        }
+
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* ========== МОБИЛЬНАЯ АДАПТАЦИЯ ========== */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .main-content {
+                gap: 15px;
+            }
+            
+            .game-board-container,
+            .controls-panel,
+            .game-log,
+            .rules-panel {
+                padding: 15px;
+            }
+            
+            #game-board {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+            }
+            
+            .cell {
+                height: 100px;
+            }
+            
+            .cell-name {
+                font-size: 0.85rem;
+            }
+            
+            .roll-button {
+                padding: 15px 20px;
+                font-size: 1.1rem;
+            }
+            
+            .footer-links {
+                flex-direction: column;
+                gap: 15px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #game-board {
+                grid-template-columns: 1fr;
+            }
+            
+            .cell {
+                height: 80px;
+            }
+            
+            .container {
+                padding: 10px;
+            }
+        }
+
+        /* ========== ПОЛОСА ПРОКРУТКИ ========== */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        /* ========== УТИЛИТЫ ========== */
+        .hidden {
+            display: none !important;
+        }
+
+        .loading {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .loading::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, 
+                transparent, 
+                rgba(255,255,255,0.4), 
+                transparent);
+            animation: shimmer 1.5s infinite;
+        }
+    </style>
+</head>
 <body>
-    <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
-        <header style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #2d3436; margin-bottom: 5px;">🏢 Империя Будущего</h1>
-            <p style="color: #636e72; margin-top: 0;">Онлайн-стратегия с динамичной экономикой</p>
-        </header>
-        
-        <div style="display: grid; grid-template-columns: 3fr 1fr; gap: 20px;">
-            <!-- Игровое поле -->
-            <div>
-                <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
-                    <h3 style="margin-top: 0;">Игровое поле</h3>
-                    <div id="game-board" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;"></div>
+    <div class="container">
+        <!-- ШАПКА -->
+        <header>
+            <h1>🏢 Империя Будущего</h1>
+            <p class="subtitle">Онлайн-стратегия с динамичной экономикой и мультиплеером</p>
+            
+            <div class="status-badges">
+                <div class="badge online">
+                    <span>●</span> Онлайн
                 </div>
-                
-                <!-- Панель управления -->
-                <div id="controls" style="margin-top: 20px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
-                    <h3 style="margin-top: 0;">Управление</h3>
-                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-                        <p style="margin: 0 0 10px 0;">
-                            Ход: <strong><span id="current-player">Игрок 1</span></strong> 
-                            | Деньги: $<strong><span id="money">15000</span></strong>
-                        </p>
-                        <button onclick="rollDice()" style="background: #0984e3; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%;">
-                            🎲 Бросить кубики
-                        </button>
-                        <div id="dice-result" style="text-align: center; margin: 10px 0; font-size: 18px; min-height: 30px;"></div>
+                <div class="badge multiplayer">
+                    <span>👥</span> Мультиплеер
+                </div>
+                <div class="badge beta">
+                    <span>🚀</span> Бета-версия
+                </div>
+            </div>
+        </header>
+
+        <!-- ОСНОВНОЙ КОНТЕНТ -->
+        <div class="main-content">
+            <!-- ЛЕВАЯ КОЛОНКА: Игровое поле и управление -->
+            <div>
+                <!-- Игровое поле -->
+                <div class="game-board-container">
+                    <h2 class="section-title">Игровое поле</h2>
+                    <div id="game-board">
+                        <!-- Клетки будут созданы через JavaScript -->
                     </div>
                     
-                    <div id="action-buttons" style="display: none; background: #fff3cd; padding: 15px; border-radius: 8px; border: 1px solid #ffeaa7;">
-                        <p style="margin-top: 0; color: #856404;">Доступные действия:</p>
-                        <div style="display: flex; gap: 10px;">
-                            <button onclick="buyProperty()" style="flex: 1; background: #00b894; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer;">
+                    <!-- Прогресс игры -->
+                    <div class="progress-container">
+                        <div class="progress-label">
+                            <span>Прогресс игры</span>
+                            <span id="progress-percent">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Панель управления -->
+                <div class="controls-panel">
+                    <h2 class="section-title">Управление</h2>
+                    
+                    <!-- Информация о текущем игроке -->
+                    <div class="player-info">
+                        <div class="current-player">
+                            <span>🎮 Ход игрока:</span>
+                            <span id="current-player-name" style="color: #FFD166;">Загрузка...</span>
+                        </div>
+                        <div class="player-money">
+                            $<span id="money">15000</span>
+                        </div>
+                        <div style="font-size: 0.9rem; opacity: 0.9;">
+                            Ход: <span id="turn-counter">1</span> | 
+                            Владений: <span id="properties-count">0</span>
+                        </div>
+                    </div>
+
+                    <!-- Управление кубиками -->
+                    <div class="dice-controls">
+                        <button class="roll-button" onclick="rollDice()" id="roll-button">
+                            🎲 Бросить кубики
+                        </button>
+                        
+                        <div id="dice-result">
+                            <!-- Результат броска появится здесь -->
+                        </div>
+                    </div>
+
+                    <!-- Кнопки действий -->
+                    <div class="action-buttons" id="action-buttons">
+                        <div class="action-title">
+                            <span>⚡</span> Доступные действия
+                        </div>
+                        <div class="action-buttons-grid">
+                            <button class="action-button buy" onclick="buyProperty()" id="buy-button">
                                 Купить участок
                             </button>
-                            <button onclick="endTurn()" style="flex: 1; background: #6c5ce7; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer;">
+                            <button class="action-button end" onclick="endTurn()">
                                 Завершить ход
                             </button>
                         </div>
                     </div>
-                    
-                    <div id="special-actions"></div>
+
+                    <!-- Дополнительные кнопки -->
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button onclick="game.saveGame()" style="flex: 1; padding: 12px; background: #4285F4; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                            💾 Сохранить
+                        </button>
+                        <button onclick="game.loadGame()" style="flex: 1; padding: 12px; background: #34A853; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                            📂 Загрузить
+                        </button>
+                        <button onclick="game.resetGame()" style="flex: 1; padding: 12px; background: #EA4335; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                            🔄 Новая игра
+                        </button>
+                    </div>
                 </div>
             </div>
-            
-            <!-- Панель информации -->
-            <div>
-                <!-- Лог игры -->
-                <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); margin-bottom: 20px;">
-                    <h3 style="margin-top: 0;">📜 Журнал событий</h3>
-                    <div id="log" style="height: 400px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 8px; font-size: 14px;"></div>
+
+            <!-- ПРАВАЯ КОЛОНКА: Информация -->
+            <div class="info-panel">
+                <!-- Журнал событий -->
+                <div class="game-log">
+                    <h2 class="section-title">📜 Журнал событий</h2>
+                    <div class="log-container" id="log">
+                        <!-- Записи лога появятся здесь -->
+                    </div>
                 </div>
-                
-                <!-- Краткие правила -->
-                <div style="background: #dfe6e9; border-radius: 12px; padding: 15px; font-size: 14px;">
-                    <h4 style="margin-top: 0;">🎯 Цель игры</h4>
-                    <p>Соберите самую мощную бизнес-империю! Покупайте активы, собирайте монополии и разоряйте соперников.</p>
-                    
-                    <h4>⚡ Быстрые правила</h4>
-                    <ul style="padding-left: 20px;">
-                        <li>Бросайте кубики для движения</li>
-                        <li>Покупайте свободные клетки</li>
-                        <li>Платите аренду за чужие владения</li>
-                        <li>Собирайте сектора для монополии</li>
+
+                <!-- Правила игры -->
+                <div class="rules-panel">
+                    <h2 class="section-title">🎯 Правила игры</h2>
+                    <ul class="rules-list">
+                        <li><span class="tooltip">Бросайте кубики для движения по полю
+                            <span class="tooltip-text">Нажмите "Бросить кубики" для хода</span>
+                        </span></li>
+                        <li><span class="tooltip">Покупайте свободные клетки
+                            <span class="tooltip-text">Если клетка свободна, вы можете её купить</span>
+                        </span></li>
+                        <li><span class="tooltip">Собирайте аренду с других игроков
+                            <span class="tooltip-text">Если игрок попадает на вашу клетку, он платит аренду</span>
+                        </span></li>
+                        <li><span class="tooltip">Собирайте целые сектора для монополии
+                            <span class="tooltip-text">Все клетки одного цвета дают бонус</span>
+                        </span></li>
+                        <li><span class="tooltip">Избегайте банкротства
+                            <span class="tooltip-text">Если у вас кончатся деньги, вы выбываете из игры</span>
+                        </span></li>
                     </ul>
                     
-                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #b2bec3;">
-                        <small>🎮 <strong>Режим:</strong> Прототип v1.1</small><br>
-                        <small>🔄 <strong>Сохранение:</strong> Автоматическое</small><br>
-                        <small>👥 <strong>Игроки:</strong> 2 (очередь)</small>
+                    <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
+                        <h3 style="font-size: 1rem; margin-bottom: 10px; color: #666;">💡 Подсказки</h3>
+                        <p style="font-size: 0.9rem; color: #777;">
+                            • Игра автоматически сохраняется<br>
+                            • Можно играть с друзьями онлайн<br>
+                            • Стратегия важнее удачи!
+                        </p>
                     </div>
                 </div>
             </div>
         </div>
-        
-        <footer style="text-align: center; margin-top: 40px; color: #636e72; font-size: 14px;">
-            <p>
-                🚀 Разрабатывается в реальном времени | 
-                👨‍💻 Разработчик: <a href="https://github.com/avgustenko" target="_blank">avgustenko</a> | 
-                🤖 AI-архитектор: DeepSeek |
-                📂 <a href="https://github.com/avgustenko/empire-of-tomorrow" target="_blank">GitHub репозиторий</a>
-            </p>
+
+        <!-- ФУТЕР -->
+        <footer>
+            <p>🚀 <strong>Империя Будущего</strong> - развивающаяся онлайн-стратегия</p>
+            
+            <div class="footer-links">
+                <a href="https://github.com/avgustenko/empire-of-tomorrow" target="_blank" class="footer-link">
+                    <span>📂</span> GitHub репозиторий
+                </a>
+                <a href="#" onclick="game.showInstructions()" class="footer-link">
+                    <span>❓</span> Полная инструкция
+                </a>
+                <a href="#" onclick="game.reportBug()" class="footer-link">
+                    <span>🐛</span> Сообщить об ошибке
+                </a>
+                <a href="#" onclick="game.shareGame()" class="footer-link">
+                    <span>📢</span> Поделиться игрой
+                </a>
+            </div>
+            
+            <div style="margin-top: 20px; font-size: 0.85rem; color: #999;">
+                <p>
+                    © 2024 Империя Будущего | 
+                    👨‍💻 Разработчик: <strong>avgustenko</strong> | 
+                    🤖 AI-архитектор: <strong>DeepSeek</strong> |
+                    🎮 Версия: <span id="game-version">1.2.0</span>
+                </p>
+            </div>
         </footer>
     </div>
-    
+
+    <!-- JavaScript -->
     <script src="game.js"></script>
+    
+    <script>
+        // Инициализация игры
+        let game;
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('🎮 Загрузка игры...');
+            game = new EmpireGame();
+            
+            // Делаем глобально доступным
+            window.game = game;
+            window.rollDice = () => game.rollDice();
+            window.buyProperty = () => game.buyProperty();
+            window.endTurn = () => game.endTurn();
+            
+            // Устанавливаем версию игры
+            document.getElementById('game-version').textContent = '1.2.0';
+            
+            console.log('✅ Игра загружена и готова!');
+        });
+
+        // Обработка клавиатуры
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && !e.target.matches('input, textarea')) {
+                e.preventDefault();
+                const rollButton = document.getElementById('roll-button');
+                if (rollButton && !rollButton.disabled) {
+                    rollDice();
+                }
+            }
+            
+            if (e.code === 'KeyB' && e.ctrlKey) {
+                e.preventDefault();
+                const buyButton = document.getElementById('buy-button');
+                if (buyButton && !buyButton.disabled) {
+                    buyProperty();
+                }
+            }
+            
+            if (e.code === 'KeyE' && e.ctrlKey) {
+                e.preventDefault();
+                endTurn();
+            }
+        });
+
+        // Показываем инструкцию при первом посещении
+        if (!localStorage.getItem('empire_first_visit')) {
+            setTimeout(() => {
+                alert('🎮 Добро пожаловать в "Империю Будущего"!\n\n' +
+                      'Для начала игры:\n' +
+                      '1. Нажмите "Бросить кубики" (Пробел)\n' +
+                      '2. Покупайте свободные клетки (Ctrl+B)\n' +
+                      '3. Собирайте аренду с других игроков\n' +
+                      '4. Станьте самым богатым магнатом!\n\n' +
+                      'Игра автоматически сохраняется. Удачи!');
+                localStorage.setItem('empire_first_visit', 'true');
+            }, 1000);
+        }
+    </script>
 </body>
+</html>
