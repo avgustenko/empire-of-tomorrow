@@ -1,4 +1,227 @@
-// ИМПЕРИЯ БУДУЩЕГО - РАСШИРЕННАЯ ВЕРСИЯ С МУЛЬТИПЛЕЕРОМ
+// ИМПЕРИЯ БУДУЩЕГО - ПОЛНАЯ ВЕРСИЯ С РЕАЛЬНЫМ МУЛЬТИПЛЕЕРОМ
+class RealMultiplayer {
+    constructor(gameInstance) {
+        this.game = gameInstance;
+        this.socket = null;
+        this.isConnected = false;
+        this.serverUrl = null;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
+        
+        this.detectServerUrl();
+    }
+    
+    detectServerUrl() {
+        // В разработке: localhost, в продакшене: Railway URL
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            this.serverUrl = 'http://localhost:3000';
+        } else {
+            // После деплоя на Railway замените на ваш URL
+            this.serverUrl = 'https://empire-of-tomorrow.up.railway.app';
+        }
+        
+        console.log('🌐 Server URL:', this.serverUrl);
+    }
+    
+    connect() {
+        if (this.socket) {
+            this.disconnect();
+        }
+        
+        console.log('🔗 Connecting to server...');
+        
+        this.socket = io(this.serverUrl, {
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: this.maxReconnectAttempts,
+            reconnectionDelay: 1000,
+            timeout: 20000
+        });
+        
+        this.setupEventListeners();
+    }
+    
+    setupEventListeners() {
+        this.socket.on('connect', () => {
+            console.log('✅ Connected to server');
+            this.isConnected = true;
+            this.reconnectAttempts = 0;
+            this.game.updateConnectionStatus('✅ Реальный мультиплеер');
+            this.joinRoom();
+        });
+        
+        this.socket.on('connect_error', (error) => {
+            console.error('❌ Connection error:', error);
+            this.game.updateConnectionStatus('⚠️ Ошибка подключения');
+        });
+        
+        this.socket.on('disconnect', (reason) => {
+            console.log('❌ Disconnected:', reason);
+            this.isConnected = false;
+            this.game.updateConnectionStatus('❌ Оффлайн');
+            
+            if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                this.reconnectAttempts++;
+                setTimeout(() => this.connect(), 3000);
+            }
+        });
+        
+        this.socket.on('room-joined', (data) => {
+            console.log('🎮 Room joined:', data);
+            
+            this.game.playerId = data.player.id;
+            this.game.isHost = data.player.isHost;
+            this.game.playerName = data.player.name;
+            this.game.players[0].name = data.player.name;
+            this.game.players[0].color = data.player.color;
+            
+            this.game.connectedPlayers = data.room.players.map(p => ({
+                id: p.id,
+                name: p.name,
+                color: p.color,
+                money: p.money || 20000,
+                position: 0,
+                isBot: false,
+                isOnline: p.isOnline,
+                isHost: p.isHost
+            }));
+            
+            this.game.updatePlayersList();
+            
+            if (this.game.isHost) {
+                this.game.gameLog.push('🏠 Вы создали комнату! Пригласите друзей.');
+            } else {
+                this.game.gameLog.push(`👋 Присоединились к комнате ${data.room.id}`);
+            }
+            
+            this.game.renderGameLog();
+        });
+        
+        this.socket.on('join-error', (data) => {
+            console.error('❌ Join error:', data);
+            alert(`Ошибка: ${data.message}`);
+        });
+        
+        this.socket.on('player-joined', (data) => {
+            console.log('👋 New player:', data);
+            
+            const newPlayer = {
+                id: data.player.id,
+                name: data.player.name,
+                color: data.player.color,
+                money: 20000,
+                position: 0,
+                isBot: false,
+                isOnline: true,
+                isHost: data.player.isHost
+            };
+            
+            if (!this.game.connectedPlayers.some(p => p.id === newPlayer.id)) {
+                this.game.connectedPlayers.push(newPlayer);
+                this.game.updatePlayersList();
+                this.game.gameLog.push(`👋 ${newPlayer.name} присоединился`);
+                this.game.renderGameLog();
+            }
+        });
+        
+        this.socket.on('player-left', (data) => {
+            console.log('🚪 Player left:', data);
+            
+            this.game.connectedPlayers = this.game.connectedPlayers.filter(p => p.id !== data.playerId);
+            this.game.updatePlayersList();
+            this.game.gameLog.push(`🚪 ${data.playerName} покинул игру`);
+            this.game.renderGameLog();
+        });
+        
+        this.socket.on('game-state-update', (data) => {
+            if (data.playerId === this.game.playerId) return;
+            
+            console.log('🔄 Update from:', data.playerName);
+            this.game.applyGameState(data.state);
+            
+            if (data.action) {
+                switch(data.action.type) {
+                    case 'dice-roll':
+                        this.game.gameLog.push(`🎲 ${data.playerName} бросает кубики: ${data.action.dice1}+${data.action.dice2}=${data.action.total}`);
+                        break;
+                    case 'buy-property':
+                        this.game.gameLog.push(`🏠 ${data.playerName} покупает недвижимость`);
+                        break;
+                    case 'end-turn':
+                        this.game.gameLog.push(`🔄 ${data.playerName} завершает ход`);
+                        break;
+                }
+                this.game.renderGameLog();
+            }
+        });
+        
+        this.socket.on('chat-message', (data) => {
+            this.game.addChatMessage(data.playerName, data.message);
+        });
+        
+        this.socket.on('room-info', (data) => {
+            console.log('ℹ️ Room info:', data);
+        });
+        
+        this.socket.on('pong', (data) => {
+            // Пинг-понг
+        });
+    }
+    
+    joinRoom() {
+        if (!this.socket || !this.socket.connected) return;
+        
+        const joinData = {
+            roomId: this.game.roomId,
+            playerName: this.game.playerName,
+            playerId: this.game.playerId,
+            color: this.game.players[0].color
+        };
+        
+        console.log('🚪 Joining room:', joinData);
+        this.socket.emit('join-room', joinData);
+    }
+    
+    sendGameUpdate(state, action = null) {
+        if (!this.isConnected || !this.socket) return;
+        
+        this.socket.emit('game-update', {
+            state: state,
+            action: action
+        });
+    }
+    
+    sendChatMessage(message) {
+        if (!this.isConnected || !this.socket) return;
+        
+        this.socket.emit('chat-message', {
+            message: message
+        });
+    }
+    
+    getRoomInfo(roomId) {
+        if (!this.isConnected || !this.socket) return;
+        
+        this.socket.emit('get-room-info', {
+            roomId: roomId
+        });
+    }
+    
+    disconnect() {
+        if (this.socket) {
+            this.socket.disconnect();
+            this.socket = null;
+        }
+        this.isConnected = false;
+    }
+    
+    ping() {
+        if (this.isConnected && this.socket) {
+            this.socket.emit('ping');
+        }
+    }
+}
+
 class EmpireGame {
     constructor() {
         console.log('🎮 Инициализация расширенной версии...');
@@ -8,11 +231,13 @@ class EmpireGame {
         this.playerId = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         this.playerName = localStorage.getItem('empire_player_name') || `Игрок_${Math.floor(Math.random() * 1000)}`;
         this.isMultiplayer = false;
+        this.isHost = false;
         this.connectedPlayers = [];
+        this.multiplayer = new RealMultiplayer(this);
         
         // Экономическая система
-        this.inflationRate = 1.0; // 100% базовая цена
-        this.economicState = 'stable'; // stable, boom, recession
+        this.inflationRate = 1.0;
+        this.economicState = 'stable';
         this.stockPrices = {
             digital: 100,
             industry: 100,
@@ -28,42 +253,41 @@ class EmpireGame {
                 position: 0, 
                 color: "#FF6B6B",
                 stocks: { digital: 0, industry: 0, luxury: 0 },
-                items: []
+                items: [],
+                isHost: false
             }
         ];
         this.currentPlayerIndex = 0;
         this.cells = this.createGameBoard();
-        this.gameLog = ["🎮 Добро пожаловать в Империю Будущего v2.0!"];
+        this.gameLog = ["🎮 Добро пожаловать в Империю Будущего v3.0!"];
         this.totalTurns = 0;
         this.properties = [0];
         this.auctionItems = [];
         this.luxuryItems = this.createLuxuryItems();
+        this.currentAction = null;
         
         this.initUI();
         this.initBoard();
         this.updateDisplay();
         this.renderGameLog();
-        this.setupMultiplayer();
         
         console.log('✅ Расширенная версия готова!');
     }
 
     // ========== МУЛЬТИПЛЕЕР СИСТЕМА ==========
-    setupMultiplayer() {
-        this.multiplayerPanel = this.createMultiplayerPanel();
-        
-        // Симуляция мультиплеера (в реальной версии здесь был бы WebSocket)
-        this.simulateMultiplayer();
+    initUI() {
+        this.addMultiplayerPanel();
+        this.createEconomicPanel();
     }
 
-    createMultiplayerPanel() {
+    addMultiplayerPanel() {
         const panelHTML = `
             <div id="multiplayer-panel" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin: 20px 0; box-shadow: 0 8px 25px rgba(0,0,0,0.2);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <div>
                         <h3 style="margin: 0; font-size: 22px;">🌐 Империя Онлайн</h3>
                         <div id="connection-status" style="font-size: 14px; opacity: 0.9; margin-top: 5px;">
-                            <span style="background: #4CAF50; padding: 3px 10px; border-radius: 12px; font-size: 12px;">✅ Локальный режим</span>
+                            <span style="background: #f44336; padding: 3px 10px; border-radius: 12px; font-size: 12px;">❌ Локальный режим</span>
                         </div>
                     </div>
                     <div style="display: flex; gap: 10px;">
@@ -85,14 +309,13 @@ class EmpireGame {
                         <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
                             <div style="display: flex; align-items: center;">
                                 <div style="width: 12px; height: 12px; border-radius: 50%; background: #FF6B6B; margin-right: 10px;"></div>
-                                <span>${this.playerName} (Вы) 👑</span>
+                                <span>${this.playerName} (Вы) ${this.isHost ? '👑' : ''}</span>
                             </div>
                             <span style="font-size: 12px; opacity: 0.8;">$20,000</span>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Чат -->
                 <div id="chat-container">
                     <div id="chat-messages" style="height: 120px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 13px;">
                         <div style="color: #aaa; text-align: center; padding: 10px;">Чат включится в онлайн-режиме</div>
@@ -111,8 +334,6 @@ class EmpireGame {
         if (gameBoard) {
             gameBoard.insertAdjacentHTML('beforebegin', panelHTML);
         }
-        
-        return panelHTML;
     }
 
     toggleMultiplayer() {
@@ -132,29 +353,25 @@ class EmpireGame {
         localStorage.setItem('empire_player_name', name);
         this.isMultiplayer = true;
         
+        // Запускаем реальное подключение
+        this.multiplayer.connect();
+        
         // Обновляем UI
         document.getElementById('multiplayer-btn').innerHTML = '🌐 Онлайн режим';
         document.getElementById('multiplayer-btn').style.background = 'rgba(76, 175, 80, 0.3)';
         document.getElementById('multiplayer-btn').style.borderColor = '#4CAF50';
         
-        document.getElementById('connection-status').innerHTML = `
-            <span style="background: #4CAF50; padding: 3px 10px; border-radius: 12px; font-size: 12px;">✅ Онлайн режим</span>
-            <span style="margin-left: 10px; font-size: 12px;">ID комнаты: ${this.roomId}</span>
-        `;
-        
         document.getElementById('chat-input').disabled = false;
         document.querySelector('#chat-container button').disabled = false;
         
-        // Симулируем подключение других игроков
-        this.simulateOtherPlayers();
-        
-        this.gameLog.push('🌐 Включен онлайн-режим! Теперь можно играть с друзьями.');
+        this.gameLog.push('🌐 Подключаемся к серверу мультиплеера...');
         this.renderGameLog();
     }
 
     disableMultiplayer() {
         this.isMultiplayer = false;
         this.connectedPlayers = [];
+        this.multiplayer.disconnect();
         
         document.getElementById('multiplayer-btn').innerHTML = '🌐 Включить онлайн';
         document.getElementById('multiplayer-btn').style.background = 'rgba(255,255,255,0.2)';
@@ -167,43 +384,24 @@ class EmpireGame {
         document.getElementById('chat-input').disabled = true;
         document.querySelector('#chat-container button').disabled = true;
         
-        this.gameLog.push('🔌 Онлайн-режим отключен. Вы играете в одиночку.');
+        this.gameLog.push('🔌 Онлайн-режим отключен');
         this.renderGameLog();
         this.updatePlayersList();
     }
 
-    simulateMultiplayer() {
-        // В реальной игре здесь было бы подключение к WebSocket серверу
-        // Сейчас просто симулируем для демонстрации
-        
-        // Симуляция других игроков каждые 30 секунд
-        setInterval(() => {
-            if (this.isMultiplayer && Math.random() > 0.7) {
-                this.simulateOtherPlayers();
+    updateConnectionStatus(status) {
+        const statusElement = document.getElementById('connection-status');
+        if (statusElement) {
+            if (status.includes('✅')) {
+                statusElement.innerHTML = `
+                    <span style="background: #4CAF50; padding: 3px 10px; border-radius: 12px; font-size: 12px;">${status}</span>
+                    <span style="margin-left: 10px; font-size: 12px;">ID комнаты: ${this.roomId}</span>
+                `;
+            } else {
+                statusElement.innerHTML = `
+                    <span style="background: #f44336; padding: 3px 10px; border-radius: 12px; font-size: 12px;">${status}</span>
+                `;
             }
-        }, 30000);
-    }
-
-    simulateOtherPlayers() {
-        if (!this.isMultiplayer) return;
-        
-        const botNames = ['Алексей_Инвестор', 'Мария_Бизнес', 'Дмитрий_Трейдер', 'Ольга_Магнат', 'Сергей_Олигарх'];
-        const randomName = botNames[Math.floor(Math.random() * botNames.length)];
-        
-        if (!this.connectedPlayers.some(p => p.name === randomName)) {
-            const botPlayer = {
-                id: 'bot_' + Date.now(),
-                name: randomName,
-                money: 18000 + Math.floor(Math.random() * 10000),
-                position: Math.floor(Math.random() * 16),
-                color: this.getRandomColor(),
-                isBot: true
-            };
-            
-            this.connectedPlayers.push(botPlayer);
-            this.gameLog.push(`👋 ${randomName} присоединился к игре`);
-            this.updatePlayersList();
-            this.renderGameLog();
         }
     }
 
@@ -213,22 +411,56 @@ class EmpireGame {
         
         if (!playersList) return;
         
-        // Все игроки: вы + подключенные
         const allPlayers = [this.players[0], ...this.connectedPlayers];
         
         playersList.innerHTML = allPlayers.map(player => `
             <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
                 <div style="display: flex; align-items: center;">
                     <div style="width: 12px; height: 12px; border-radius: 50%; background: ${player.color}; margin-right: 10px;"></div>
-                    <span>${player.name} ${player.id === this.playerId ? '(Вы) 👑' : ''}</span>
+                    <span>${player.name} ${player.id === this.playerId ? '(Вы)' : ''} ${player.isHost ? '👑' : ''}</span>
                 </div>
-                <span style="font-size: 12px; opacity: 0.8;">$${player.money.toLocaleString()}</span>
+                <span style="font-size: 12px; opacity: 0.8;">$${(player.money || 20000).toLocaleString()}</span>
             </div>
         `).join('');
         
         if (playersCount) {
             playersCount.textContent = allPlayers.length;
         }
+    }
+
+    addChatMessage(sender, message) {
+        const chatMessages = document.getElementById('chat-messages');
+        if (!chatMessages) return;
+        
+        if (chatMessages.querySelector('div[style*="color: #aaa"]')) {
+            chatMessages.innerHTML = '';
+        }
+        
+        const messageElement = document.createElement('div');
+        messageElement.style.marginBottom = '5px';
+        messageElement.innerHTML = `
+            <strong style="color: ${sender === this.playerName ? '#FFD166' : '#4ECDC4'}">${sender}:</strong> 
+            <span style="color: white">${message}</span>
+            <span style="color: #aaa; font-size: 11px; margin-left: 5px;">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+        `;
+        chatMessages.appendChild(messageElement);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    sendChat() {
+        const input = document.getElementById('chat-input');
+        if (!input || !input.value.trim()) return;
+        
+        const message = input.value;
+        
+        if (this.isMultiplayer && this.multiplayer.isConnected) {
+            this.multiplayer.sendChatMessage(message);
+            this.addChatMessage(this.playerName, message);
+        } else {
+            this.addChatMessage(this.playerName, message);
+        }
+        
+        input.value = '';
     }
 
     copyRoomLink() {
@@ -245,62 +477,9 @@ class EmpireGame {
         }
     }
 
-    sendChat() {
-        const input = document.getElementById('chat-input');
-        if (!input || !input.value.trim()) return;
-        
-        const message = input.value;
-        
-        // В реальной игре здесь отправка на сервер
-        this.addChatMessage(this.playerName, message);
-        
-        // Симулируем ответ ботов
-        if (this.isMultiplayer && this.connectedPlayers.length > 0 && Math.random() > 0.5) {
-            setTimeout(() => {
-                const bot = this.connectedPlayers[Math.floor(Math.random() * this.connectedPlayers.length)];
-                const responses = [
-                    'Интересная стратегия!',
-                    'Кто следующий ходит?',
-                    'Куплю-продам акции!',
-                    'Удачи в игре!',
-                    'Монополия близко...'
-                ];
-                const response = responses[Math.floor(Math.random() * responses.length)];
-                this.addChatMessage(bot.name, response);
-            }, 1000 + Math.random() * 2000);
-        }
-        
-        input.value = '';
-    }
-
-    addChatMessage(sender, message) {
-        const chatMessages = document.getElementById('chat-messages');
-        if (!chatMessages) return;
-        
-        // Убираем placeholder при первом сообщении
-        if (chatMessages.querySelector('div[style*="color: #aaa"]')) {
-            chatMessages.innerHTML = '';
-        }
-        
-        const messageElement = document.createElement('div');
-        messageElement.style.marginBottom = '5px';
-        messageElement.innerHTML = `
-            <strong style="color: ${sender === this.playerName ? '#FFD166' : '#4ECDC4'}">${sender}:</strong> 
-            <span style="color: white">${message}</span>
-            <span style="color: #aaa; font-size: 11px; margin-left: 5px;">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-        `;
-        chatMessages.appendChild(messageElement);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-
     getRoomIdFromURL() {
         const params = new URLSearchParams(window.location.search);
-        return params.get('room') || 'room_' + Math.random().toString(36).substr(2, 6).toUpperCase();
-    }
-
-    getRandomColor() {
-        const colors = ['#4ECDC4', '#FFD166', '#06D6A0', '#118AB2', '#EF476F', '#9D4EDD'];
-        return colors[Math.floor(Math.random() * colors.length)];
+        return params.get('room') || 'ROOM' + Math.random().toString(36).substr(2, 6).toUpperCase();
     }
 
     // ========== ЭКОНОМИЧЕСКАЯ СИСТЕМА ==========
@@ -333,70 +512,6 @@ class EmpireGame {
             { id: 4, name: "Золотая виза", price: 6000, effect: "Пропуск одной тюрьмы", uses: 1 },
             { id: 5, name: "Хакеры", price: 7500, effect: "Кража 10% денег у случайного игрока", uses: 1 }
         ];
-    }
-
-    updateEconomicSystem() {
-        // Каждые 5 ходов обновляем экономику
-        if (this.totalTurns % 5 === 0 && this.totalTurns > 0) {
-            const events = [
-                { type: 'inflation', chance: 0.3, effect: () => { 
-                    this.inflationRate *= 1.1; 
-                    this.gameLog.push(`📈 Инфляция 10%! Цены выросли.`); 
-                }},
-                { type: 'crisis', chance: 0.2, effect: () => { 
-                    this.economicState = 'recession';
-                    this.gameLog.push(`📉 Экономический кризис! Аренда -20%`); 
-                }},
-                { type: 'boom', chance: 0.2, effect: () => { 
-                    this.economicState = 'boom';
-                    this.gameLog.push(`🚀 Экономический бум! Аренда +30%`); 
-                }},
-                { type: 'stable', chance: 0.3, effect: () => { 
-                    this.economicState = 'stable';
-                    this.gameLog.push(`⚖️ Экономика стабилизировалась`); 
-                }}
-            ];
-            
-            // Случайное экономическое событие
-            const randomEvent = events.find(event => Math.random() < event.chance) || events[0];
-            randomEvent.effect();
-            
-            // Обновляем цены акций
-            this.updateStockPrices();
-            
-            this.renderGameLog();
-        }
-    }
-
-    updateStockPrices() {
-        const changes = {
-            digital: (Math.random() - 0.5) * 20,
-            industry: (Math.random() - 0.5) * 15,
-            luxury: (Math.random() - 0.5) * 25
-        };
-        
-        Object.keys(this.stockPrices).forEach(sector => {
-            this.stockPrices[sector] = Math.max(50, Math.min(200, 
-                this.stockPrices[sector] + changes[sector]
-            ));
-        });
-    }
-
-    getAdjustedPrice(basePrice) {
-        return Math.round(basePrice * this.inflationRate);
-    }
-
-    getAdjustedRent(baseRent) {
-        let multiplier = 1.0;
-        if (this.economicState === 'boom') multiplier = 1.3;
-        if (this.economicState === 'recession') multiplier = 0.8;
-        
-        return Math.round(baseRent * multiplier * this.inflationRate);
-    }
-
-    // ========== ИГРОВАЯ МЕХАНИКА ==========
-    initUI() {
-        this.createEconomicPanel();
     }
 
     createEconomicPanel() {
@@ -435,6 +550,50 @@ class EmpireGame {
         }
     }
 
+    updateEconomicSystem() {
+        if (this.totalTurns % 5 === 0 && this.totalTurns > 0) {
+            const events = [
+                { type: 'inflation', chance: 0.3, effect: () => { 
+                    this.inflationRate *= 1.1; 
+                    this.gameLog.push(`📈 Инфляция 10%! Цены выросли.`); 
+                }},
+                { type: 'crisis', chance: 0.2, effect: () => { 
+                    this.economicState = 'recession';
+                    this.gameLog.push(`📉 Экономический кризис! Аренда -20%`); 
+                }},
+                { type: 'boom', chance: 0.2, effect: () => { 
+                    this.economicState = 'boom';
+                    this.gameLog.push(`🚀 Экономический бум! Аренда +30%`); 
+                }},
+                { type: 'stable', chance: 0.3, effect: () => { 
+                    this.economicState = 'stable';
+                    this.gameLog.push(`⚖️ Экономика стабилизировалась`); 
+                }}
+            ];
+            
+            const randomEvent = events.find(event => Math.random() < event.chance) || events[0];
+            randomEvent.effect();
+            
+            this.updateStockPrices();
+            this.updateEconomicPanel();
+            this.renderGameLog();
+        }
+    }
+
+    updateStockPrices() {
+        const changes = {
+            digital: (Math.random() - 0.5) * 20,
+            industry: (Math.random() - 0.5) * 15,
+            luxury: (Math.random() - 0.5) * 25
+        };
+        
+        Object.keys(this.stockPrices).forEach(sector => {
+            this.stockPrices[sector] = Math.max(50, Math.min(200, 
+                this.stockPrices[sector] + changes[sector]
+            ));
+        });
+    }
+
     updateEconomicPanel() {
         const inflationElement = document.getElementById('inflation-rate');
         const economyElement = document.getElementById('economy-status');
@@ -457,335 +616,19 @@ class EmpireGame {
         }
     }
 
-    rollDice() {
-        const dice1 = Math.floor(Math.random() * 6) + 1;
-        const dice2 = Math.floor(Math.random() * 6) + 1;
-        const total = dice1 + dice2;
-        
-        this.gameLog.push(`🎲 ${this.getCurrentPlayer().name} бросает кубики: ${dice1}+${dice2}=${total}`);
-        
-        // Анимация
-        const diceResult = document.getElementById('dice-result');
-        if (diceResult) {
-            diceResult.innerHTML = `
-                <div style="display: inline-block; animation: roll 0.5s; font-size: 1.8rem;">🎲 ${dice1}</div>
-                <div style="display: inline-block; animation: roll 0.5s 0.1s; font-size: 1.8rem;">🎲 ${dice2}</div>
-                <div style="display: inline-block; font-weight: bold; margin-left: 15px; font-size: 1.5rem; color: #2d3436;">= ${total}</div>
-            `;
-        }
-        
-        this.movePlayer(total);
-        this.renderGameLog();
+    getAdjustedPrice(basePrice) {
+        return Math.round(basePrice * this.inflationRate);
     }
 
-    movePlayer(steps) {
-        const player = this.getCurrentPlayer();
-        const oldPosition = player.position;
-        player.position = (player.position + steps) % this.cells.length;
+    getAdjustedRent(baseRent) {
+        let multiplier = 1.0;
+        if (this.economicState === 'boom') multiplier = 1.3;
+        if (this.economicState === 'recession') multiplier = 0.8;
         
-        this.gameLog.push(`➡️ ${player.name} перемещается на ${this.cells[player.position].name}`);
-        
-        this.updatePlayerMarkers();
-        this.handleCellAction(player.position);
-        this.updateDisplay();
-        this.renderGameLog();
+        return Math.round(baseRent * multiplier * this.inflationRate);
     }
 
-    handleCellAction(cellIndex) {
-        const cell = this.cells[cellIndex];
-        const player = this.getCurrentPlayer();
-        
-        // Показываем кнопки действий
-        const actionButtons = document.getElementById('action-buttons');
-        if (actionButtons) {
-            actionButtons.classList.add('show');
-        }
-        
-        // Обновляем кнопку покупки
-        const buyButton = document.getElementById('buy-button');
-        if (buyButton) {
-            const adjustedPrice = this.getAdjustedPrice(cell.price);
-            const canBuy = cell.price > 0 && !cell.owner && player.money >= adjustedPrice;
-            buyButton.disabled = !canBuy;
-            buyButton.innerHTML = canBuy ? 
-                `Купить за <strong>$${adjustedPrice}</strong>` : 
-                'Недостаточно средств';
-        }
-        
-        // Обрабатываем специальные клетки
-        switch(cell.type) {
-            case 'start':
-                const salary = 2000;
-                player.money += salary;
-                this.gameLog.push(`💰 ${player.name} получает зарплату: +$${salary}`);
-                break;
-                
-            case 'tax':
-                const tax = Math.floor(player.money * 0.15);
-                player.money -= tax;
-                this.gameLog.push(`🏛️ Налоговая: ${player.name} платит налог $${tax}`);
-                break;
-                
-            case 'jail':
-                this.gameLog.push(`🚨 ${player.name} посещает СИЗО. Пропускает ход.`);
-                // В реальной игре здесь была бы логика пропуска хода
-                break;
-                
-            case 'casino':
-                this.handleCasino();
-                break;
-                
-            case 'stock':
-                this.showStockMarket();
-                break;
-                
-            case 'auction':
-                this.startAuction();
-                break;
-                
-            case 'shop':
-                this.showLuxuryShop();
-                break;
-                
-            case 'chance':
-                this.drawChanceCard();
-                break;
-        }
-        
-        // Если клетка принадлежит другому игроку
-        if (cell.owner !== null && cell.owner !== player.id) {
-            const adjustedRent = this.getAdjustedRent(cell.rent);
-            player.money -= adjustedRent;
-            
-            // В мультиплеере деньги переходили бы другому игроку
-            this.gameLog.push(`🏠 ${player.name} платит аренду $${adjustedRent}`);
-            
-            // Если это бот, получаем деньги
-            const botOwner = this.connectedPlayers.find(p => p.id === cell.owner);
-            if (botOwner) {
-                botOwner.money += adjustedRent;
-                this.updatePlayersList();
-            }
-        }
-    }
-
-    handleCasino() {
-        const player = this.getCurrentPlayer();
-        const bet = Math.min(1000, Math.floor(player.money * 0.2));
-        
-        if (confirm(`🎰 Казино! Сыграть в рулетку? Ставка: $${bet}\n\nВыигрыш: x2 при удаче, проигрыш ставки при неудаче.`)) {
-            const win = Math.random() > 0.6;
-            
-            if (win) {
-                player.money += bet;
-                this.gameLog.push(`🎰 ${player.name} выигрывает в казино: +$${bet}`);
-            } else {
-                player.money -= bet;
-                this.gameLog.push(`🎰 ${player.name} проигрывает в казино: -$${bet}`);
-            }
-        }
-    }
-
-    showStockMarket() {
-        const player = this.getCurrentPlayer();
-        const stockInfo = `
-            📊 ФОНДОВАЯ БИРЖА
-            
-            Цены акций:
-            • Цифровой сектор: $${this.stockPrices.digital} ${this.stockPrices.digital > 100 ? '📈' : '📉'}
-            • Промышленность: $${this.stockPrices.industry} ${this.stockPrices.industry > 100 ? '📈' : '📉'}
-            • Роскошь: $${this.stockPrices.luxury} ${this.stockPrices.luxury > 100 ? '📈' : '📉'}
-            
-            Ваши акции:
-            • Цифровой: ${player.stocks.digital} акций
-            • Промышленность: ${player.stocks.industry} акций
-            • Роскошь: ${player.stocks.luxury} акций
-        `;
-        
-        alert(stockInfo);
-    }
-
-    startAuction() {
-        if (this.auctionItems.length === 0) {
-            // Создаем предметы для аукциона
-            const items = [
-                { name: "Старый завод", basePrice: 3000, type: "property" },
-                { name: "Пакет акций", basePrice: 2000, type: "stocks" },
-                { name: "Драгоценности", basePrice: 5000, type: "item" }
-            ];
-            
-            this.auctionItems = items.map(item => ({
-                ...item,
-                currentBid: Math.floor(item.basePrice * 0.7),
-                currentBidder: null
-            }));
-        }
-        
-        const currentItem = this.auctionItems[0];
-        const bid = prompt(
-            `🎭 АУКЦИОН!\n\nТекущий лот: ${currentItem.name}\nСтартовая цена: $${currentItem.basePrice}\nТекущая ставка: $${currentItem.currentBid}\n\nВведите вашу ставку (минимум $${currentItem.currentBid + 100}):`,
-            currentItem.currentBid + 100
-        );
-        
-        if (bid) {
-            const bidAmount = parseInt(bid);
-            const player = this.getCurrentPlayer();
-            
-            if (bidAmount >= currentItem.currentBid + 100 && bidAmount <= player.money) {
-                currentItem.currentBid = bidAmount;
-                currentItem.currentBidder = player.id;
-                
-                player.money -= bidAmount;
-                this.gameLog.push(`🎭 ${player.name} делает ставку $${bidAmount} на ${currentItem.name}`);
-                this.updateDisplay();
-            } else {
-                alert('❌ Некорректная ставка!');
-            }
-        }
-    }
-
-    showLuxuryShop() {
-        const player = this.getCurrentPlayer();
-        const itemsList = this.luxuryItems.map(item => 
-            `• ${item.name} - $${item.price}\n  ${item.effect}`
-        ).join('\n\n');
-        
-        const choice = prompt(
-            `🛍️ МАГАЗИН ПРЕДМЕТОВ РОСКОШИ\n\n${itemsList}\n\nВведите номер предмета для покупки (1-${this.luxuryItems.length}) или 0 для выхода:`
-        );
-        
-        if (choice && choice !== '0') {
-            const itemIndex = parseInt(choice) - 1;
-            if (itemIndex >= 0 && itemIndex < this.luxuryItems.length) {
-                const item = this.luxuryItems[itemIndex];
-                
-                if (player.money >= item.price) {
-                    player.money -= item.price;
-                    player.items.push({...item});
-                    this.gameLog.push(`🛍️ ${player.name} покупает ${item.name} за $${item.price}`);
-                    this.updateDisplay();
-                } else {
-                    alert('❌ Недостаточно денег!');
-                }
-            }
-        }
-    }
-
-    drawChanceCard() {
-        const cards = [
-            { text: "Вы выиграли в лотерею!", effect: (p) => p.money += 3000 },
-            { text: "Налоговая проверка", effect: (p) => p.money -= 1500 },
-            { text: "Инвестиции окупились", effect: (p) => p.money += 4000 },
-            { text: "Кибер-атака на счет", effect: (p) => p.money -= 2000 },
-            { text: "Нашли инвестора", effect: (p) => p.money += 5000 },
-            { text: "Курс валют упал", effect: (p) => p.money -= 1000 },
-            { text: "Технологический прорыв", effect: (p) => { 
-                p.stocks.digital += 10;
-                this.gameLog.push(`${p.name} получает 10 акций цифрового сектора!`);
-            }},
-            { text: "Экологический штраф", effect: (p) => {
-                p.money -= 2500;
-                this.gameLog.push(`${p.name} платит экологический штраф!`);
-            }}
-        ];
-        
-        const card = cards[Math.floor(Math.random() * cards.length)];
-        const player = this.getCurrentPlayer();
-        
-        card.effect(player);
-        this.gameLog.push(`🎭 Шанс: ${card.text}`);
-    }
-
-    buyProperty() {
-        const player = this.getCurrentPlayer();
-        const cell = this.cells[player.position];
-        const adjustedPrice = this.getAdjustedPrice(cell.price);
-        
-        if (cell.price > 0 && !cell.owner && player.money >= adjustedPrice) {
-            cell.owner = player.id;
-            player.money -= adjustedPrice;
-            
-            this.gameLog.push(`✅ ${player.name} покупает ${cell.name} за $${adjustedPrice}`);
-            
-            // Скрываем кнопки действий
-            const actionButtons = document.getElementById('action-buttons');
-            if (actionButtons) {
-                actionButtons.classList.remove('show');
-            }
-            
-            // Обновляем отображение
-            this.initBoard();
-            this.updateDisplay();
-            this.renderGameLog();
-            
-            // Проверяем монополию
-            this.checkMonopoly(player.id, cell.type);
-        }
-    }
-
-    checkMonopoly(playerId, sectorType) {
-        const playerCells = this.cells.filter(cell => 
-            cell.owner === playerId && cell.type === sectorType && cell.price > 0
-        );
-        
-        const totalCellsInSector = this.cells.filter(cell => 
-            cell.type === sectorType && cell.price > 0
-        ).length;
-        
-        if (playerCells.length === totalCellsInSector && totalCellsInSector > 0) {
-            this.gameLog.push(`🏆 МОНОПОЛИЯ! Игрок ${this.players[0].name} контролирует весь ${sectorType} сектор! Бонус к аренде: +50%`);
-        }
-    }
-
-    endTurn() {
-        const actionButtons = document.getElementById('action-buttons');
-        if (actionButtons) {
-            actionButtons.classList.remove('show');
-        }
-        
-        this.totalTurns++;
-        this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
-        
-        this.gameLog.push(`🔄 Ход переходит к ${this.getCurrentPlayer().name}`);
-        
-        // Обновляем экономику
-        this.updateEconomicSystem();
-        this.updateEconomicPanel();
-        
-        // Обновляем прогресс
-        this.updateProgress();
-        
-        // Симулируем ход ботов в мультиплеере
-        if (this.isMultiplayer) {
-            this.simulateBotTurns();
-        }
-        
-        this.updateDisplay();
-        this.renderGameLog();
-    }
-
-    simulateBotTurns() {
-        this.connectedPlayers.forEach(bot => {
-            if (Math.random() > 0.3) {
-                // Бот иногда делает ход
-                const dice = Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6) + 1;
-                bot.position = (bot.position + dice) % this.cells.length;
-                
-                // Бот иногда покупает клетки
-                const cell = this.cells[bot.position];
-                if (cell.price > 0 && !cell.owner && bot.money >= cell.price * 1.5) {
-                    cell.owner = bot.id;
-                    bot.money -= cell.price;
-                    this.gameLog.push(`🤖 ${bot.name} покупает ${cell.name}`);
-                }
-            }
-        });
-        
-        this.updatePlayersList();
-        this.updatePlayerMarkers();
-    }
-
-    // ========== ОСНОВНЫЕ МЕТОДЫ (как в предыдущей версии) ==========
+    // ========== ИГРОВАЯ МЕХАНИКА ==========
     initBoard() {
         const board = document.getElementById('game-board');
         if (!board) {
@@ -852,20 +695,20 @@ class EmpireGame {
             }
         });
         
-        // Маркеры ботов в мультиплеере
-        if (this.isMultiplayer) {
-            this.connectedPlayers.forEach(bot => {
-                const cell = document.getElementById(`cell-${bot.position}`);
+        // Маркеры других игроков в мультиплеере
+        if (this.isMultiplayer && this.multiplayer.isConnected) {
+            this.connectedPlayers.forEach(otherPlayer => {
+                const cell = document.getElementById(`cell-${otherPlayer.position}`);
                 if (cell) {
                     const marker = document.createElement('div');
-                    marker.className = 'player-marker bot-marker';
+                    marker.className = 'player-marker other-player';
                     marker.style.cssText = `
                         position: absolute;
                         bottom: 5px;
                         right: 5px;
                         width: 15px;
                         height: 15px;
-                        background: ${bot.color};
+                        background: ${otherPlayer.color};
                         border-radius: 50%;
                         border: 2px solid white;
                         box-shadow: 0 2px 4px rgba(0,0,0,0.3);
@@ -894,6 +737,290 @@ class EmpireGame {
             'shop': 'Магазин'
         };
         return names[type] || type;
+    }
+
+    rollDice() {
+        const dice1 = Math.floor(Math.random() * 6) + 1;
+        const dice2 = Math.floor(Math.random() * 6) + 1;
+        const total = dice1 + dice2;
+        
+        this.currentAction = {
+            type: 'dice-roll',
+            dice1: dice1,
+            dice2: dice2,
+            total: total
+        };
+        
+        this.gameLog.push(`🎲 ${this.getCurrentPlayer().name} бросает кубики: ${dice1}+${dice2}=${total}`);
+        
+        const diceResult = document.getElementById('dice-result');
+        if (diceResult) {
+            diceResult.innerHTML = `
+                <div style="display: inline-block; animation: roll 0.5s; font-size: 1.8rem;">🎲 ${dice1}</div>
+                <div style="display: inline-block; animation: roll 0.5s 0.1s; font-size: 1.8rem;">🎲 ${dice2}</div>
+                <div style="display: inline-block; font-weight: bold; margin-left: 15px; font-size: 1.5rem; color: #2d3436;">= ${total}</div>
+            `;
+        }
+        
+        this.movePlayer(total);
+        this.renderGameLog();
+        this.syncGameState();
+    }
+
+    movePlayer(steps) {
+        const player = this.getCurrentPlayer();
+        const oldPosition = player.position;
+        player.position = (player.position + steps) % this.cells.length;
+        
+        this.gameLog.push(`➡️ ${player.name} перемещается на ${this.cells[player.position].name}`);
+        
+        this.updatePlayerMarkers();
+        this.handleCellAction(player.position);
+        this.updateDisplay();
+        this.renderGameLog();
+    }
+
+    handleCellAction(cellIndex) {
+        const cell = this.cells[cellIndex];
+        const player = this.getCurrentPlayer();
+        
+        const actionButtons = document.getElementById('action-buttons');
+        if (actionButtons) {
+            actionButtons.classList.add('show');
+        }
+        
+        const buyButton = document.getElementById('buy-button');
+        if (buyButton) {
+            const adjustedPrice = this.getAdjustedPrice(cell.price);
+            const canBuy = cell.price > 0 && !cell.owner && player.money >= adjustedPrice;
+            buyButton.disabled = !canBuy;
+            buyButton.innerHTML = canBuy ? 
+                `Купить за <strong>$${adjustedPrice}</strong>` : 
+                'Недостаточно средств';
+        }
+        
+        switch(cell.type) {
+            case 'start':
+                const salary = 2000;
+                player.money += salary;
+                this.gameLog.push(`💰 ${player.name} получает зарплату: +$${salary}`);
+                break;
+                
+            case 'tax':
+                const tax = Math.floor(player.money * 0.15);
+                player.money -= tax;
+                this.gameLog.push(`🏛️ Налоговая: ${player.name} платит налог $${tax}`);
+                break;
+                
+            case 'jail':
+                this.gameLog.push(`🚨 ${player.name} посещает СИЗО. Пропускает ход.`);
+                break;
+                
+            case 'casino':
+                this.handleCasino();
+                break;
+                
+            case 'stock':
+                this.showStockMarket();
+                break;
+                
+            case 'auction':
+                this.startAuction();
+                break;
+                
+            case 'shop':
+                this.showLuxuryShop();
+                break;
+        }
+        
+        if (cell.owner !== null && cell.owner !== player.id) {
+            const adjustedRent = this.getAdjustedRent(cell.rent);
+            player.money -= adjustedRent;
+            
+            const owner = this.players.find(p => p.id === cell.owner) || 
+                         this.connectedPlayers.find(p => p.id === cell.owner);
+            
+            if (owner) {
+                this.gameLog.push(`🏠 ${player.name} платит аренду $${adjustedRent} владельцу ${owner.name}`);
+            }
+        }
+    }
+
+    handleCasino() {
+        const player = this.getCurrentPlayer();
+        const bet = Math.min(1000, Math.floor(player.money * 0.2));
+        
+        if (confirm(`🎰 Казино! Сыграть в рулетку? Ставка: $${bet}\n\nВыигрыш: x2 при удаче, проигрыш ставки при неудаче.`)) {
+            const win = Math.random() > 0.6;
+            
+            if (win) {
+                player.money += bet;
+                this.gameLog.push(`🎰 ${player.name} выигрывает в казино: +$${bet}`);
+            } else {
+                player.money -= bet;
+                this.gameLog.push(`🎰 ${player.name} проигрывает в казино: -$${bet}`);
+            }
+            
+            this.updateDisplay();
+            this.renderGameLog();
+        }
+    }
+
+    showStockMarket() {
+        const player = this.getCurrentPlayer();
+        const stockInfo = `
+            📊 ФОНДОВАЯ БИРЖА
+            
+            Цены акций:
+            • Цифровой сектор: $${this.stockPrices.digital} ${this.stockPrices.digital > 100 ? '📈' : '📉'}
+            • Промышленность: $${this.stockPrices.industry} ${this.stockPrices.industry > 100 ? '📈' : '📉'}
+            • Роскошь: $${this.stockPrices.luxury} ${this.stockPrices.luxury > 100 ? '📈' : '📉'}
+            
+            Ваши акции:
+            • Цифровой: ${player.stocks.digital} акций
+            • Промышленность: ${player.stocks.industry} акций
+            • Роскошь: ${player.stocks.luxury} акций
+            
+            Для покупки акций свяжитесь с брокером.
+        `;
+        
+        alert(stockInfo);
+    }
+
+    startAuction() {
+        if (this.auctionItems.length === 0) {
+            const items = [
+                { name: "Старый завод", basePrice: 3000, type: "property" },
+                { name: "Пакет акций", basePrice: 2000, type: "stocks" },
+                { name: "Драгоценности", basePrice: 5000, type: "item" }
+            ];
+            
+            this.auctionItems = items.map(item => ({
+                ...item,
+                currentBid: Math.floor(item.basePrice * 0.7),
+                currentBidder: null
+            }));
+        }
+        
+        const currentItem = this.auctionItems[0];
+        const bid = prompt(
+            `🎭 АУКЦИОН!\n\nТекущий лот: ${currentItem.name}\nСтартовая цена: $${currentItem.basePrice}\nТекущая ставка: $${currentItem.currentBid}\n\nВведите вашу ставку (минимум $${currentItem.currentBid + 100}):`,
+            currentItem.currentBid + 100
+        );
+        
+        if (bid) {
+            const bidAmount = parseInt(bid);
+            const player = this.getCurrentPlayer();
+            
+            if (bidAmount >= currentItem.currentBid + 100 && bidAmount <= player.money) {
+                currentItem.currentBid = bidAmount;
+                currentItem.currentBidder = player.id;
+                
+                player.money -= bidAmount;
+                this.gameLog.push(`🎭 ${player.name} делает ставку $${bidAmount} на ${currentItem.name}`);
+                this.updateDisplay();
+                this.renderGameLog();
+            } else {
+                alert('❌ Некорректная ставка!');
+            }
+        }
+    }
+
+    showLuxuryShop() {
+        const player = this.getCurrentPlayer();
+        const itemsList = this.luxuryItems.map((item, index) => 
+            `${index + 1}. ${item.name} - $${item.price}\n   ${item.effect}`
+        ).join('\n\n');
+        
+        const choice = prompt(
+            `🛍️ МАГАЗИН ПРЕДМЕТОВ РОСКОШИ\n\n${itemsList}\n\nВведите номер предмета для покупки (1-${this.luxuryItems.length}) или 0 для выхода:`
+        );
+        
+        if (choice && choice !== '0') {
+            const itemIndex = parseInt(choice) - 1;
+            if (itemIndex >= 0 && itemIndex < this.luxuryItems.length) {
+                const item = this.luxuryItems[itemIndex];
+                
+                if (player.money >= item.price) {
+                    player.money -= item.price;
+                    player.items.push({...item});
+                    this.gameLog.push(`🛍️ ${player.name} покупает ${item.name} за $${item.price}`);
+                    this.updateDisplay();
+                    this.renderGameLog();
+                } else {
+                    alert('❌ Недостаточно денег!');
+                }
+            }
+        }
+    }
+
+    buyProperty() {
+        const player = this.getCurrentPlayer();
+        const cell = this.cells[player.position];
+        const adjustedPrice = this.getAdjustedPrice(cell.price);
+        
+        if (cell.price > 0 && !cell.owner && player.money >= adjustedPrice) {
+            cell.owner = player.id;
+            player.money -= adjustedPrice;
+            
+            this.currentAction = {
+                type: 'buy-property',
+                cellId: cell.id,
+                price: adjustedPrice,
+                cellName: cell.name
+            };
+            
+            this.gameLog.push(`✅ ${player.name} покупает ${cell.name} за $${adjustedPrice}`);
+            
+            const actionButtons = document.getElementById('action-buttons');
+            if (actionButtons) {
+                actionButtons.classList.remove('show');
+            }
+            
+            this.initBoard();
+            this.updateDisplay();
+            this.renderGameLog();
+            this.syncGameState();
+            
+            this.checkMonopoly(player.id, cell.type);
+        }
+    }
+
+    checkMonopoly(playerId, sectorType) {
+        const playerCells = this.cells.filter(cell => 
+            cell.owner === playerId && cell.type === sectorType && cell.price > 0
+        );
+        
+        const totalCellsInSector = this.cells.filter(cell => 
+            cell.type === sectorType && cell.price > 0
+        ).length;
+        
+        if (playerCells.length === totalCellsInSector && totalCellsInSector > 0) {
+            this.gameLog.push(`🏆 МОНОПОЛИЯ! Игрок ${this.getCurrentPlayer().name} контролирует весь ${sectorType} сектор! Бонус к аренде: +50%`);
+        }
+    }
+
+    endTurn() {
+        this.currentAction = {
+            type: 'end-turn'
+        };
+        
+        const actionButtons = document.getElementById('action-buttons');
+        if (actionButtons) {
+            actionButtons.classList.remove('show');
+        }
+        
+        this.totalTurns++;
+        this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+        
+        this.gameLog.push(`🔄 Ход переходит к ${this.getCurrentPlayer().name}`);
+        
+        this.updateEconomicSystem();
+        this.updateEconomicPanel();
+        this.updateProgress();
+        this.updateDisplay();
+        this.renderGameLog();
+        this.syncGameState();
     }
 
     getCurrentPlayer() {
@@ -951,8 +1078,48 @@ class EmpireGame {
         logElement.scrollTop = logElement.scrollHeight;
     }
 
+    applyGameState(state) {
+        if (!state) return;
+        
+        try {
+            // Обновляем только если состояние новее
+            if (state.players) {
+                this.players = state.players;
+            }
+            if (state.cells) {
+                this.cells = state.cells;
+            }
+            if (state.currentPlayerIndex !== undefined) {
+                this.currentPlayerIndex = state.currentPlayerIndex;
+            }
+            if (state.totalTurns !== undefined) {
+                this.totalTurns = state.totalTurns;
+            }
+            
+            this.initBoard();
+            this.updateDisplay();
+            this.renderGameLog();
+            
+        } catch (error) {
+            console.error('Error applying game state:', error);
+        }
+    }
+
+    syncGameState() {
+        if (!this.isMultiplayer || !this.multiplayer.isConnected) return;
+        
+        const gameState = {
+            players: this.players,
+            cells: this.cells,
+            currentPlayerIndex: this.currentPlayerIndex,
+            totalTurns: this.totalTurns
+        };
+        
+        this.multiplayer.sendGameUpdate(gameState, this.currentAction);
+    }
+
+    // ========== УТИЛИТЫ ==========
     showNotification(message) {
-        // Создаем уведомление
         const notification = document.createElement('div');
         notification.style.cssText = `
             position: fixed;
@@ -970,14 +1137,12 @@ class EmpireGame {
         notification.innerHTML = message;
         document.body.appendChild(notification);
         
-        // Удаляем через 3 секунды
         setTimeout(() => {
             notification.style.animation = 'slideOutRight 0.3s ease-out';
             setTimeout(() => notification.remove(), 300);
         }, 3000);
     }
 
-    // Дополнительные методы (сохранение и т.д.)
     saveGame() {
         const gameState = {
             players: this.players,
@@ -994,14 +1159,14 @@ class EmpireGame {
             saveTime: new Date().toLocaleString()
         };
         
-        localStorage.setItem('empire_save_v2', JSON.stringify(gameState));
-        this.gameLog.push('💾 Игра сохранена (v2.0)');
+        localStorage.setItem('empire_save_v3', JSON.stringify(gameState));
+        this.gameLog.push('💾 Игра сохранена (v3.0)');
         this.renderGameLog();
         this.showNotification('✅ Игра успешно сохранена!');
     }
 
     loadGame() {
-        const saved = localStorage.getItem('empire_save_v2');
+        const saved = localStorage.getItem('empire_save_v3');
         if (saved) {
             try {
                 const state = JSON.parse(saved);
@@ -1029,10 +1194,10 @@ class EmpireGame {
                 this.renderGameLog();
                 
                 if (this.isMultiplayer) {
-                    this.enableMultiplayer();
+                    this.multiplayer.connect();
                 }
                 
-                this.gameLog.push(`🔄 Игра загружена (v2.0, сохранение от ${state.saveTime})`);
+                this.gameLog.push(`🔄 Игра загружена (v3.0, сохранение от ${state.saveTime})`);
                 this.showNotification('✅ Игра загружена!');
             } catch (e) {
                 console.error('Ошибка загрузки:', e);
@@ -1045,38 +1210,38 @@ class EmpireGame {
 
     resetGame() {
         if (confirm('Начать новую игру? Текущий прогресс будет потерян.')) {
-            localStorage.removeItem('empire_save_v2');
+            localStorage.removeItem('empire_save_v3');
             location.reload();
         }
     }
 
     showInstructions() {
         const instructions = `
-🎮 ИМПЕРИЯ БУДУЩЕГО v2.0
+🎮 ИМПЕРИЯ БУДУЩЕГО v3.0
 
-НОВЫЕ ВОЗМОЖНОСТИ:
-✅ Мультиплеер с ботами
-✅ Динамическая экономика
-✅ Фондовая биржа
-✅ Казино и аукцион
-✅ Магазин предметов роскоши
-
-ЭКОНОМИЧЕСКАЯ СИСТЕМА:
-• Инфляция - цены растут
-• Кризисы и бумы - меняется аренда
-• Акции - покупайте и продавайте
+ОСНОВНЫЕ ПРАВИЛА:
+1. Бросайте кубики для движения
+2. Покупайте свободные клетки
+3. Собирайте аренду с других игроков
+4. Собирайте сектора для монополии
+5. Избегайте банкротства
 
 МУЛЬТИПЛЕЕР:
-• Включите онлайн-режим
-• Приглашайте друзей по ссылке
-• Играйте с ботами
+• Нажмите "Включить онлайн"
+• Пригласите друзей по ссылке
+• Играйте в реальном времени
+
+ЭКОНОМИКА:
+• Инфляция меняет цены
+• Кризисы и бумы влияют на аренду
+• Следите за биржей
 
 ГОРЯЧИЕ КЛАВИШИ:
 • ПРОБЕЛ - бросить кубики
 • Ctrl+S - сохранить игру
 • Ctrl+L - загрузить игру
 
-УДАЧИ В ПОСТРОЕНИИ ИМПЕРИИ! 🚀
+УДАЧИ! 🚀
         `;
         alert(instructions);
     }
@@ -1085,7 +1250,6 @@ class EmpireGame {
         const link = window.location.href;
         this.showNotification('✅ Ссылка скопирована! Отправьте друзьям.');
         
-        // В реальной игре здесь была бы отправка в соцсети
         if (navigator.clipboard) {
             navigator.clipboard.writeText(link);
         }
@@ -1105,7 +1269,7 @@ class EmpireGame {
 let game;
 
 function initGame() {
-    console.log('🚀 Запуск расширенной версии...');
+    console.log('🚀 Запуск игры v3.0...');
     game = new EmpireGame();
     
     window.game = game;
@@ -1113,9 +1277,9 @@ function initGame() {
     window.buyProperty = () => game.buyProperty();
     window.endTurn = () => game.endTurn();
     
-    console.log('🎉 Расширенная версия запущена!');
+    console.log('🎉 Игра запущена!');
     
-    // Добавляем глобальные горячие клавиши
+    // Глобальные горячие клавиши
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey && e.key === 's') {
             e.preventDefault();
