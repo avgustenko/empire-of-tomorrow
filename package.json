@@ -1,6 +1,6 @@
 {
   "name": "empire-of-tomorrow-server",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "Multiplayer server for Empire of Tomorrow game",
   "main": "server.js",
   "scripts": {
@@ -29,3 +29,4 @@
   "author": "avgustenko",
   "license": "MIT"
 }
+
